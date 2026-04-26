@@ -1,7 +1,5 @@
 package org.example;
 
-import java.util.Map;
-
 // 对应 JSON 文件里的每一个大括号 { ... }
 public class Question {
     private Integer question_id;
@@ -15,14 +13,13 @@ public class Question {
     // 【关键修改】所有嵌套在 "question_content" 里的数据，都由这个对象统一接收
     private QuestionContent question_content;
 
-    // 【删除】下面这些字段在原 JSON 中不存在于根层级，必须删除，否则获取到的永远是 null
-    // private Map<String, String> option;
-    // private String correct_answer;
-    // private String answer_analysis;
-    // private String tips;
+    // ===================== 只加这 3 个字段 =====================
+    private String correct_answer;
+    private String answer_analysis;
+    private String tips;
+    // ==========================================================
 
     // 👇 新增的字段：用来接收前端传来的用户选择的答案 👇
-    // 注意：这个字段不在 JSON 文件里，是用来接收前端请求的，保留即可
     private String selected_answer;
 
     // --- Getter 和 Setter 方法 ---
@@ -91,6 +88,32 @@ public class Question {
     public void setQuestion_content(QuestionContent question_content) {
         this.question_content = question_content;
     }
+
+    // ===================== 只补这 3 个 Get/Set =====================
+    public String getCorrect_answer() {
+        return correct_answer;
+    }
+
+    public void setCorrect_answer(String correct_answer) {
+        this.correct_answer = correct_answer;
+    }
+
+    public String getAnswer_analysis() {
+        return answer_analysis;
+    }
+
+    public void setAnswer_analysis(String answer_analysis) {
+        this.answer_analysis = answer_analysis;
+    }
+
+    public String getTips() {
+        return tips;
+    }
+
+    public void setTips(String tips) {
+        this.tips = tips;
+    }
+    // ==============================================================
 
     // selected_answer 的 Getter 和 Setter
     public String getSelected_answer() {

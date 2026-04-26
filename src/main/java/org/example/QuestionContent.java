@@ -1,28 +1,38 @@
 package org.example;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.Map;
 
-// 对应你 JSON 里的 "question_content" 对象
+@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class QuestionContent {
 
+    private String type;
+    private String content;
     private String image;
-
-    // 对应 "option": { "A": "...", "B": "..." }
     private Map<String, String> option;
 
-    // 对应 "correct_answer": "C"
-    private String correct_answer;
+    private String optionA;
+    private String optionB;
+    private String optionC;
+    private String optionD;
 
-    // 对应 "answer_analysis": "..."
-    private String answer_analysis;
+    public String getType() {
+        return type;
+    }
 
-    // 对应 "tips": "..."
-    private String tips;
+    public void setType(String type) {
+        this.type = type;
+    }
 
-    // 必须要有无参构造函数（Jackson 读取 JSON 需要）
-    public QuestionContent() {}
+    public String getContent() {
+        return content;
+    }
 
-    // Getter 和 Setter 方法
+    public void setContent(String content) {
+        this.content = content;
+    }
 
     public String getImage() {
         return image;
@@ -40,27 +50,35 @@ public class QuestionContent {
         this.option = option;
     }
 
-    public String getCorrect_answer() {
-        return correct_answer;
+    public String getOptionA() {
+        return optionA;
     }
 
-    public void setCorrect_answer(String correct_answer) {
-        this.correct_answer = correct_answer;
+    public void setOptionA(String optionA) {
+        this.optionA = optionA;
     }
 
-    public String getAnswer_analysis() {
-        return answer_analysis;
+    public String getOptionB() {
+        return optionB;
     }
 
-    public void setAnswer_analysis(String answer_analysis) {
-        this.answer_analysis = answer_analysis;
+    public void setOptionB(String optionB) {
+        this.optionB = optionB;
     }
 
-    public String getTips() {
-        return tips;
+    public String getOptionC() {
+        return optionC;
     }
 
-    public void setTips(String tips) {
-        this.tips = tips;
+    public void setOptionC(String optionC) {
+        this.optionC = optionC;
+    }
+
+    public String getOptionD() {
+        return optionD;
+    }
+
+    public void setOptionD(String optionD) {
+        this.optionD = optionD;
     }
 }
