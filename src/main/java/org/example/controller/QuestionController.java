@@ -1,20 +1,22 @@
 package org.example.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.common.Result;
 import org.example.entity.User;
 import org.example.Question;
 import org.example.QuestionService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.client.RestTemplate; // 引入 RestTemplate
-
+import org.springframework.web.client.RestTemplate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
+@CrossOrigin
 public class QuestionController {
 
     @Autowired
@@ -23,10 +25,16 @@ public class QuestionController {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    // 用于调用微信接口
-    private final RestTemplate restTemplate = new RestTemplate();
+    @Autowired
+    private RestTemplate restTemplate;
 
-    // ====================== 题目接口（保持原样） ======================
+    @Value("${wechat.appid}")
+    private String wechatAppId;
+
+    @Value("${wechat.secret}")
+    private String wechatSecret;
+
+    // ====================== 题目接口 ======================
     @PostMapping("/addQuestion")
     public Result<String> addQuestion(@RequestBody Question question) {
         try {
@@ -109,175 +117,144 @@ public class QuestionController {
         return Result.success(map);
     }
 
-    // ====================== 登录接口（已修改：支持微信自动登录/注册） ======================
+    // ====================== 登录（修复：接收头像+昵称+自动保存） ======================
     @PostMapping("/login")
-    public Result<User> login(
-            @RequestParam(required = false) String username,
-            @RequestParam(required = false) String password,
-            @RequestParam(required = false) String code // 前端传来的 code
-    ) {
-        User user = null;
-        String wechatOpenid = null;
+    public Result<User> login(@RequestBody User user) {
+        String code = user.getCode();
+        String avatarUrl = user.getAvatarurl();
+        String nickName = user.getNickName();
 
-        // ====== 1. 微信登录逻辑 ======
-        if (code != null && !code.trim().isEmpty()) {
-            // 你的微信小程序 AppID 和 AppSecret (请替换成你自己的)
-            String appId = "YOUR_APPID_HERE";
-            String secret = "YOUR_APPSECRET_HERE";
-            String url = "https://api.weixin.qq.com/sns/jscode2session?appid=" + appId +
-                    "&secret=" + secret + "&js_code=" + code + "&grant_type=authorization_code";
-
-            try {
-                // 调用微信接口获取 OpenID
-                WechatSession session = restTemplate.getForObject(url, WechatSession.class);
-
-                if (session != null && session.getOpenid() != null) {
-                    wechatOpenid = session.getOpenid();
-
-                    // 1. 尝试查询用户
-                    try {
-                        user = jdbcTemplate.queryForObject(
-                                "SELECT * FROM users WHERE wechat_openid = ?",
-                                (rs, row) -> {
-                                    User u = new User();
-                                    u.setUserId(rs.getInt("user_id"));
-                                    u.setUsername(rs.getString("username"));
-                                    u.setPassword(rs.getString("password"));
-                                    u.setPhone(rs.getString("phone"));
-                                    u.setAvatarUrl(rs.getString("avatar_url"));
-                                    u.setWechatOpenid(rs.getString("wechat_openid"));
-                                    u.setDataId(rs.getInt("data_id"));
-                                    return u;
-                                }, wechatOpenid);
-                    } catch (Exception e) {
-                        // 用户不存在，执行自动注册
-                        // 1.1 先插入 user_data
-                        jdbcTemplate.update(
-                                "INSERT INTO user_data (finished, mistake_numbers, correct_numbers, number_day) VALUES (0,0,0,0)"
-                        );
-                        Integer dataId = jdbcTemplate.queryForObject("SELECT currval('user_data_data_id_seq')", Integer.class);
-
-                        // 1.2 插入 users 表
-                        String defaultUsername = "wx_user_" + (int)(Math.random() * 10000);
-                        jdbcTemplate.update(
-                                "INSERT INTO users (username, password, phone, avatar_url, wechat_openid, data_id) VALUES (?, ?, ?, ?, ?, ?)",
-                                defaultUsername, "123456", null, null, wechatOpenid, dataId
-                        );
-
-                        // 1.3 查询刚注册的用户返回
-                        user = jdbcTemplate.queryForObject(
-                                "SELECT * FROM users WHERE wechat_openid = ?",
-                                (rs, row) -> {
-                                    User u = new User();
-                                    u.setUserId(rs.getInt("user_id"));
-                                    u.setUsername(rs.getString("username"));
-                                    u.setPassword(rs.getString("password"));
-                                    u.setPhone(rs.getString("phone"));
-                                    u.setAvatarUrl(rs.getString("avatar_url"));
-                                    u.setWechatOpenid(rs.getString("wechat_openid"));
-                                    u.setDataId(rs.getInt("data_id"));
-                                    return u;
-                                }, wechatOpenid);
-                    }
-                } else {
-                    return Result.error("微信登录失败: " + (session != null ? session.getErrmsg() : "未知错误"));
-                }
-            } catch (Exception e) {
-                return Result.error("请求微信服务器失败");
-            }
+        if (code == null || code.isEmpty()) {
+            return Result.error("请传入code");
         }
-        // ====== 2. 账号密码登录（保持原样） ======
-        else {
-            if (username == null || password == null || username.isEmpty() || password.isEmpty()) {
-                return Result.error("请输入账号密码");
-            }
+
+        try {
+            String url = "https://api.weixin.qq.com/sns/jscode2session"
+                    + "?appid=" + wechatAppId
+                    + "&secret=" + wechatSecret
+                    + "&js_code=" + code
+                    + "&grant_type=authorization_code";
+
+            String response = restTemplate.getForObject(url, String.class);
+            ObjectMapper mapper = new ObjectMapper();
+            WechatSession session = mapper.readValue(response, WechatSession.class);
+            String openid = session.getOpenid();
+
+            User loginUser;
+
             try {
-                user = jdbcTemplate.queryForObject(
-                        "SELECT * FROM users WHERE username = ? AND password = ?",
+                // 查询用户
+                loginUser = jdbcTemplate.queryForObject(
+                        "SELECT * FROM users WHERE wechat_openid = ?",
                         (rs, row) -> {
                             User u = new User();
                             u.setUserId(rs.getInt("user_id"));
                             u.setUsername(rs.getString("username"));
-                            u.setPassword(rs.getString("password"));
-                            u.setPhone(rs.getString("phone"));
-                            u.setAvatarUrl(rs.getString("avatar_url"));
+                            u.setAvatarurl(rs.getString("avatar_url"));
                             u.setWechatOpenid(rs.getString("wechat_openid"));
-                            u.setDataId(rs.getInt("data_id"));
                             return u;
-                        }, username, password);
-            } catch (Exception e) {
-                return Result.error("账号或密码错误");
-            }
-        }
+                        }, openid);
 
-        if (user != null) {
-            user.setPassword(null); // 安全起见，不返回密码
-            return Result.success(user);
+                // 只更新头像，不更新用户名（避免重复）
+                jdbcTemplate.update(
+                        "UPDATE users SET avatar_url = ? WHERE wechat_openid = ?",
+                        avatarUrl, openid);
+
+            } catch (Exception e) {
+                // 注册新用户 —— 用户名使用 openid 保证唯一
+                jdbcTemplate.update(
+                        "INSERT INTO user_data (finished,mistake_numbers,correct_numbers,number_day) VALUES (0,0,0,0)");
+                Integer dataId = jdbcTemplate.queryForObject(
+                        "SELECT currval('user_data_data_id_seq')", Integer.class);
+
+                // ✅ 修复：用户名不再重复
+                jdbcTemplate.update(
+                        "INSERT INTO users (wechat_openid,username,password,avatar_url,phone,data_id) VALUES (?,?,?,?,?,?)",
+                        openid, "user_" + openid, "123456", avatarUrl, "", dataId);
+
+                loginUser = new User();
+                loginUser.setUsername("user_" + openid);
+                loginUser.setAvatarurl(avatarUrl);
+            }
+
+            return Result.success(loginUser);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("微信登录失败");
         }
-        return Result.error("登录失败");
     }
 
-    // ====================== 注册接口（保持原样） ======================
+    // ====================== 注册 ======================
     @PostMapping("/register")
-    public Result<String> register(
-            @RequestParam String username,
-            @RequestParam String password,
-            @RequestParam(required = false) String phone,
-            @RequestParam(required = false) String avatarUrl,
-            @RequestParam(required = false) String wechatOpenid
-    ) {
-        if (username.isEmpty() || password.isEmpty()) {
+    public Result<String> register(@RequestBody User user) {
+        String username = user.getUsername();
+        String password = user.getPassword();
+        String phone = user.getPhone();
+        String avatarUrl = user.getAvatarurl();
+
+        if (username == null || username.isEmpty() || password == null || password.isEmpty()) {
             return Result.error("用户名和密码不能为空");
         }
-
         try {
-            // 检查用户名是否存在
             Integer count = jdbcTemplate.queryForObject(
                     "SELECT COUNT(*) FROM users WHERE username = ?",
                     Integer.class, username);
-
             if (count > 0) {
                 return Result.error("用户名已存在");
             }
-
-            // 创建用户数据
             jdbcTemplate.update(
                     "INSERT INTO user_data (finished, mistake_numbers, correct_numbers, number_day) VALUES (0,0,0,0)"
             );
-
-            Integer dataId = jdbcTemplate.queryForObject(
-                    "SELECT currval('user_data_data_id_seq')", Integer.class);
-
-            // 插入用户
+            Integer dataId = jdbcTemplate.queryForObject("SELECT currval('user_data_data_id_seq')", Integer.class);
             jdbcTemplate.update(
-                    "INSERT INTO users (username, password, phone, avatar_url, wechat_openid, data_id) " +
-                            "VALUES (?, ?, ?, ?, ?, ?)",
-                    username, password, phone, avatarUrl, wechatOpenid, dataId);
-
+                    "INSERT INTO users (wechat_openid, username, password, avatar_url, phone, data_id) VALUES (?, ?, ?, ?, ?, ?)",
+                    "", username, password, avatarUrl, phone, dataId
+            );
             return Result.success("注册成功");
-
         } catch (Exception e) {
+            e.printStackTrace();
             return Result.error("注册失败：" + e.getMessage());
         }
     }
-}
 
-// ====================== 内部类：用于接收微信返回数据 ======================
-class WechatSession {
-    private String openid;
-    private String session_key;
-    private String unionid;
-    private Integer errcode;
-    private String errmsg;
+    // ====================== 微信会话实体 ======================
+    public static class WechatSession {
+        private String openid;
+        private String session_key;
+        private String unionid;
+        private Integer errcode;
+        private String errmsg;
 
-    public String getOpenid() { return openid; }
-    public void setOpenid(String openid) { this.openid = openid; }
-    public String getSession_key() { return session_key; }
-    public void setSession_key(String session_key) { this.session_key = session_key; }
-    public String getUnionid() { return unionid; }
-    public void setUnionid(String unionid) { this.unionid = unionid; }
-    public Integer getErrcode() { return errcode; }
-    public void setErrcode(Integer errcode) { this.errcode = errcode; }
-    public String getErrmsg() { return errmsg; }
-    public void setErrmsg(String errmsg) { this.errmsg = errmsg; }
+        public String getOpenid() {
+            return openid;
+        }
+        public void setOpenid(String openid) {
+            this.openid = openid;
+        }
+        public String getSession_key() {
+            return session_key;
+        }
+        public void setSession_key(String session_key) {
+            this.session_key = session_key;
+        }
+        public String getUnionid() {
+            return unionid;
+        }
+        public void setUnionid(String unionid) {
+            this.unionid = unionid;
+        }
+        public Integer getErrcode() {
+            return errcode;
+        }
+        public void setErrcode(Integer errcode) {
+            this.errcode = errcode;
+        }
+        public String getErrmsg() {
+            return errmsg;
+        }
+        public void setErrmsg(String errmsg) {
+            this.errmsg = errmsg;
+        }
+    }
 }

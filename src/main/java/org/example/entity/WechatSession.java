@@ -1,5 +1,8 @@
 package org.example.entity;
 
+import org.apache.ibatis.type.Alias; // 加这个导入
+
+@Alias("WechatSession2") // 就加这一行！
 public class WechatSession {
     private String openid;
     private String session_key;
