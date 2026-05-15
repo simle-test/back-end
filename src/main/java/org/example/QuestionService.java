@@ -67,5 +67,8 @@ public class QuestionService {
     public List<Question> getDataAnalysis(){
         return questionMapper.listDataAnalysis();
     }
+    public List<Question> getPolitical(){
+        return questionMapper.listPoliticalTheory();
+    }
 
 }

@@ -114,6 +114,7 @@ public class QuestionController {
         map.put("speech", questionService.getSpeech());
         map.put("quantitative", questionService.getQuantitative());
         map.put("data", questionService.getDataAnalysis());
+        map.put("political", questionService.getPolitical());
         return Result.success(map);
     }
 

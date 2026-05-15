@@ -70,6 +70,9 @@
         SELECT * FROM quantity_relation
     </select>
     <select id="listDataAnalysis" resultMap="QuestionResultMap">
+        SELECT * FROM material_analysis
+    </select>
+    <select id="listPoliticalTheory" resultMap="QuestionResultMap">
         SELECT * FROM political_theory
     </select>
 

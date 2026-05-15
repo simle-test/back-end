@@ -18,4 +18,5 @@ public interface QuestionMapper {
     List<Question> listSpeech();
     List<Question> listQuantitative();
     List<Question> listDataAnalysis();
+    List<Question> listPoliticalTheory();
 }
