@@ -1,6 +1,5 @@
 package org.example.controller;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import jakarta.servlet.http.HttpServletResponse;
@@ -13,9 +12,8 @@ import java.util.UUID;
 @RequestMapping("/file")
 public class FileController {
 
-    // 自动读取你配置的本地路径
-    @Value("${img.local.path}")
-    private String SAVE_PATH;
+    // 直接写死路径，彻底不读配置文件
+    private static final String SAVE_PATH = "/home/ubuntu/back-front/";
 
     @PostMapping("/upload")
     public String upload(@RequestParam("file") MultipartFile file) {
@@ -30,7 +28,6 @@ public class FileController {
             File dest = new File(SAVE_PATH + fileName);
             file.transferTo(dest);
 
-            // 🔥 只改这里：返回 完整线上地址，前端直接显示
             return "https://www.civilservant.cloud/file/" + fileName;
         } catch (Exception e) {
             e.printStackTrace();
