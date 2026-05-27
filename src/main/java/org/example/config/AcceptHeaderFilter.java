@@ -12,6 +12,8 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 
 import java.io.IOException;
+import java.util.Collections;
+import java.util.Enumeration;
 
 @Configuration
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -29,6 +31,14 @@ public class AcceptHeaderFilter implements Filter {
                     return "application/json, */*";
                 }
                 return super.getHeader(name);
+            }
+
+            @Override
+            public Enumeration<String> getHeaders(String name) {
+                if ("Accept".equalsIgnoreCase(name)) {
+                    return Collections.enumeration(Collections.singletonList("application/json, */*"));
+                }
+                return super.getHeaders(name);
             }
         };
 

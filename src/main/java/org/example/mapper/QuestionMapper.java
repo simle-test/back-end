@@ -19,4 +19,5 @@ public interface QuestionMapper {
     List<Question> listQuantitative();
     List<Question> listDataAnalysis();
     List<Question> listPoliticalTheory();
+    List<Question> findAllFromTotal();
 }

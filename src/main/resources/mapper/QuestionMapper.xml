@@ -19,6 +19,12 @@
         <result property="question_content" column="question_content"
                 typeHandler="org.example.handler.JsonTypeHandler"
                 javaType="org.example.QuestionContent"/>
+
+        <result property="has_image" column="has_image"/>
+        <result property="image_url" column="image_url"/>
+        <result property="has_material" column="has_material"/>
+        <result property="content_text" column="content_text"/>
+        <result property="material_id" column="material_id"/>
     </resultMap>
 
     <select id="findAll" resultMap="QuestionResultMap">
@@ -74,6 +80,10 @@
     </select>
     <select id="listPoliticalTheory" resultMap="QuestionResultMap">
         SELECT * FROM political_theory
+    </select>
+
+    <select id="findAllFromTotal" resultMap="QuestionResultMap">
+        SELECT * FROM questions_total
     </select>
 
 </mapper>

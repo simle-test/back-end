@@ -1,6 +1,7 @@
 package org.example;
 
-// 对应 JSON 文件里的每一个大括号 { ... }
+import java.util.List;
+
 public class Question {
     private Integer question_id;
     private String title;
@@ -21,6 +22,12 @@ public class Question {
 
     // 👇 新增的字段：用来接收前端传来的用户选择的答案 👇
     private String selected_answer;
+    private Boolean has_image;
+    private String image_url;
+    private Boolean has_material;
+    private String content_text;
+    private Integer material_id;
+    private List<MaterialProblem> materialProblems;
 
     // --- Getter 和 Setter 方法 ---
 
@@ -122,5 +129,53 @@ public class Question {
 
     public void setSelected_answer(String selected_answer) {
         this.selected_answer = selected_answer;
+    }
+
+    public Boolean getHas_image() {
+        return has_image;
+    }
+
+    public void setHas_image(Boolean has_image) {
+        this.has_image = has_image;
+    }
+
+    public String getImage_url() {
+        return image_url;
+    }
+
+    public void setImage_url(String image_url) {
+        this.image_url = image_url;
+    }
+
+    public Boolean getHas_material() {
+        return has_material;
+    }
+
+    public void setHas_material(Boolean has_material) {
+        this.has_material = has_material;
+    }
+
+    public String getContent_text() {
+        return content_text;
+    }
+
+    public void setContent_text(String content_text) {
+        this.content_text = content_text;
+    }
+
+    public Integer getMaterial_id() {
+        return material_id;
+    }
+
+    public void setMaterial_id(Integer material_id) {
+        this.material_id = material_id;
+    }
+
+    public List<MaterialProblem> getMaterialProblems() {
+        return materialProblems;
+    }
+
+    public void setMaterialProblems(List<MaterialProblem> materialProblems) {
+        this.materialProblems = materialProblems;
     }
 }

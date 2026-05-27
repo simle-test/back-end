@@ -1,16 +1,23 @@
 package org.example;
 
+import org.example.mapper.MaterialProblemMapper;
 import org.example.mapper.QuestionMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class QuestionService {
 
     @Autowired
     private QuestionMapper questionMapper;
+
+    @Autowired
+    private MaterialProblemMapper materialProblemMapper;
 
     public List<Question> getAllQuestions() {
         return questionMapper.findAll();
@@ -69,6 +76,33 @@ public class QuestionService {
     }
     public List<Question> getPolitical(){
         return questionMapper.listPoliticalTheory();
+    }
+
+    public List<Question> getAllFromTotal() {
+        List<Question> questions = questionMapper.findAllFromTotal();
+
+        List<Integer> materialIds = new ArrayList<>();
+        for (Question q : questions) {
+            if (Boolean.TRUE.equals(q.getHas_material()) && q.getMaterial_id() != null) {
+                materialIds.add(q.getMaterial_id());
+            }
+        }
+
+        Map<Integer, List<MaterialProblem>> materialMap = new HashMap<>();
+        if (!materialIds.isEmpty()) {
+            List<MaterialProblem> allProblems = materialProblemMapper.findAll();
+            for (MaterialProblem mp : allProblems) {
+                materialMap.computeIfAbsent(mp.getMaterial_id(), k -> new ArrayList<>()).add(mp);
+            }
+        }
+
+        for (Question q : questions) {
+            if (q.getMaterial_id() != null) {
+                q.setMaterialProblems(materialMap.getOrDefault(q.getMaterial_id(), new ArrayList<>()));
+            }
+        }
+
+        return questions;
     }
 
 }

@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -65,11 +66,6 @@ public class QuestionController {
         }
     }
 
-    @GetMapping("/list")
-    public Result<List<Question>> listQuestions() {
-        return Result.success(questionService.getAllQuestions());
-    }
-
     @PutMapping("/submit")
     public Result<String> submitAnswer(@RequestBody Question userAnswer) {
         boolean correct = questionService.checkAnswer(userAnswer);
@@ -108,13 +104,12 @@ public class QuestionController {
 
     @GetMapping("/all")
     public Result<Map<String, List<Question>>> getAllModules() {
+        List<Question> allQuestions = questionService.getAllFromTotal();
         Map<String, List<Question>> map = new HashMap<>();
-        map.put("logical", questionService.getLogical());
-        map.put("common", questionService.getCommonSense());
-        map.put("speech", questionService.getSpeech());
-        map.put("quantitative", questionService.getQuantitative());
-        map.put("data", questionService.getDataAnalysis());
-        map.put("political", questionService.getPolitical());
+        for (Question q : allQuestions) {
+            String categoryId = q.getCategory_id();
+            map.computeIfAbsent(categoryId, k -> new ArrayList<>()).add(q);
+        }
         return Result.success(map);
     }
 
