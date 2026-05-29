@@ -3,7 +3,8 @@
 <mapper namespace="org.example.mapper.QuestionMapper">
 
     <resultMap id="QuestionResultMap" type="org.example.Question">
-        <id property="question_id" column="question_id"/>
+        <id property="id" column="id"/>
+        <result property="question_id" column="question_id"/>
         <result property="title" column="title"/>
         <result property="category_id" column="category_id"/>
         <result property="difficulty" column="difficulty"/>

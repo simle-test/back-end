@@ -3,6 +3,7 @@ package org.example;
 import java.util.List;
 
 public class Question {
+    private Integer id;
     private Integer question_id;
     private String title;
     private String category_id;
@@ -30,6 +31,14 @@ public class Question {
     private List<MaterialProblem> materialProblems;
 
     // --- Getter 和 Setter 方法 ---
+
+    public Integer getId() {
+        return id;
+    }
+
+    public void setId(Integer id) {
+        this.id = id;
+    }
 
     public Integer getQuestion_id() {
         return question_id;

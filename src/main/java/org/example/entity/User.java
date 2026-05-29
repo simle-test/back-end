@@ -1,15 +1,28 @@
 package org.example.entity;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 public class User {
+
+    @JsonProperty("user_id")
     private int userId;
+
     private String username;
     private String password;
+
+    @JsonProperty("wechat_openid")
     private String wechatOpenid;
+
     private String phone;
+
+    @JsonProperty("data_id")
     private Integer dataId;
-    private String avatarurl;  // 头像
-    private String nickName;   // 昵称
-    private String code;       // 微信code
+
+    @JsonProperty("avatar_url")
+    private String avatarurl;
+
+    private String nickName;
+    private String code;
 
     public User() {}
 

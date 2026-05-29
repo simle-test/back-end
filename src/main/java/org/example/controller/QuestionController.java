@@ -140,7 +140,6 @@ public class QuestionController {
             User loginUser;
 
             try {
-                // 查询用户
                 loginUser = jdbcTemplate.queryForObject(
                         "SELECT * FROM users WHERE wechat_openid = ?",
                         (rs, row) -> {
@@ -149,6 +148,7 @@ public class QuestionController {
                             u.setUsername(rs.getString("username"));
                             u.setAvatarurl(rs.getString("avatar_url"));
                             u.setWechatOpenid(rs.getString("wechat_openid"));
+                            u.setDataId(rs.getInt("data_id"));
                             return u;
                         }, openid);
 
@@ -158,20 +158,23 @@ public class QuestionController {
                         avatarUrl, openid);
 
             } catch (Exception e) {
-                // 注册新用户 —— 用户名使用 openid 保证唯一
                 jdbcTemplate.update(
                         "INSERT INTO user_data (finished,mistake_numbers,correct_numbers,number_day) VALUES (0,0,0,0)");
                 Integer dataId = jdbcTemplate.queryForObject(
                         "SELECT currval('user_data_data_id_seq')", Integer.class);
 
-                // ✅ 修复：用户名不再重复
                 jdbcTemplate.update(
                         "INSERT INTO users (wechat_openid,username,password,avatar_url,phone,data_id) VALUES (?,?,?,?,?,?)",
                         openid, "user_" + openid, "123456", avatarUrl, "", dataId);
 
+                Integer userId = jdbcTemplate.queryForObject(
+                        "SELECT currval('users_user_id_seq')", Integer.class);
+
                 loginUser = new User();
+                loginUser.setUserId(userId);
                 loginUser.setUsername("user_" + openid);
                 loginUser.setAvatarurl(avatarUrl);
+                loginUser.setDataId(dataId);
             }
 
             return Result.success(loginUser);
@@ -217,27 +220,19 @@ public class QuestionController {
 
     // ====================== 用户数据接口 ======================
     @GetMapping("/gainUserData")
-    public Result<Map<String, Object>> gainUserData(@RequestParam int userId) {
+    public Result<Map<String, Object>> gainUserData(@RequestParam int dataId) {
         try {
-            Integer dataId = jdbcTemplate.queryForObject(
-                    "SELECT data_id FROM users WHERE user_id = ?",
-                    Integer.class, userId);
-
-            if (dataId == null) {
-                return Result.error("用户数据不存在");
-            }
-
             Map<String, Object> userData = jdbcTemplate.queryForObject(
                     "SELECT * FROM user_data WHERE data_id = ?",
                     (rs, row) -> {
                         Map<String, Object> map = new HashMap<>();
-                        map.put("dataId", rs.getInt("data_id"));
+                        map.put("data_id", rs.getInt("data_id"));
                         map.put("finished", rs.getInt("finished"));
-                        map.put("mistakeNumbers", rs.getInt("mistake_numbers"));
-                        map.put("correctNumbers", rs.getInt("correct_numbers"));
-                        map.put("numberDay", rs.getInt("number_day"));
-                        map.put("mistakeListId", parseJsonToIntList(rs.getString("mistake_list_id")));
-                        map.put("correctLisId", parseJsonToIntList(rs.getString("correct_lis_id")));
+                        map.put("mistake_numbers", rs.getInt("mistake_numbers"));
+                        map.put("correct_numbers", rs.getInt("correct_numbers"));
+                        map.put("number_day", rs.getInt("number_day"));
+                        map.put("mistake_list_id", readIntArray(rs.getArray("mistake_list_id")));
+                        map.put("correct_lis_id", readIntArray(rs.getArray("correct_lis_id")));
                         return map;
                     }, dataId);
 
@@ -251,17 +246,9 @@ public class QuestionController {
     @PostMapping("/updateUserData")
     public Result<String> updateUserData(@RequestBody Map<String, Object> body) {
         try {
-            Integer userId = (Integer) body.get("userId");
-            if (userId == null) {
-                return Result.error("userId不能为空");
-            }
-
-            Integer dataId = jdbcTemplate.queryForObject(
-                    "SELECT data_id FROM users WHERE user_id = ?",
-                    Integer.class, userId);
-
+            Integer dataId = (Integer) body.get("data_id");
             if (dataId == null) {
-                return Result.error("用户数据不存在");
+                return Result.error("data_id不能为空");
             }
 
             List<String> setClauses = new ArrayList<>();
@@ -271,25 +258,25 @@ public class QuestionController {
                 setClauses.add("finished = ?");
                 params.add(body.get("finished"));
             }
-            if (body.containsKey("mistakeNumbers")) {
+            if (body.containsKey("mistake_numbers")) {
                 setClauses.add("mistake_numbers = ?");
-                params.add(body.get("mistakeNumbers"));
+                params.add(body.get("mistake_numbers"));
             }
-            if (body.containsKey("correctNumbers")) {
+            if (body.containsKey("correct_numbers")) {
                 setClauses.add("correct_numbers = ?");
-                params.add(body.get("correctNumbers"));
+                params.add(body.get("correct_numbers"));
             }
-            if (body.containsKey("numberDay")) {
+            if (body.containsKey("number_day")) {
                 setClauses.add("number_day = ?");
-                params.add(body.get("numberDay"));
+                params.add(body.get("number_day"));
             }
-            if (body.containsKey("mistakeListId")) {
-                setClauses.add("mistake_list_id = ?::json");
-                params.add(new ObjectMapper().writeValueAsString(body.get("mistakeListId")));
+            if (body.containsKey("mistake_list_id")) {
+                setClauses.add("mistake_list_id = ?");
+                params.add(body.get("mistake_list_id"));
             }
-            if (body.containsKey("correctLisId")) {
-                setClauses.add("correct_lis_id = ?::json");
-                params.add(new ObjectMapper().writeValueAsString(body.get("correctLisId")));
+            if (body.containsKey("correct_lis_id")) {
+                setClauses.add("correct_lis_id = ?");
+                params.add(body.get("correct_lis_id"));
             }
 
             if (setClauses.isEmpty()) {
@@ -298,7 +285,23 @@ public class QuestionController {
 
             params.add(dataId);
             String sql = "UPDATE user_data SET " + String.join(", ", setClauses) + " WHERE data_id = ?";
-            jdbcTemplate.update(sql, params.toArray());
+
+            jdbcTemplate.update(connection -> {
+                var ps = connection.prepareStatement(sql);
+                int idx = 1;
+                for (String clause : setClauses) {
+                    Object val = params.get(idx - 1);
+                    if (clause.startsWith("mistake_list_id") || clause.startsWith("correct_lis_id")) {
+                        Integer[] arr = parseJsonToIntArray((String) val);
+                        ps.setArray(idx, connection.createArrayOf("integer", arr));
+                    } else {
+                        ps.setObject(idx, val);
+                    }
+                    idx++;
+                }
+                ps.setInt(idx, dataId);
+                return ps;
+            });
 
             return Result.success("更新成功");
         } catch (Exception e) {
@@ -307,15 +310,33 @@ public class QuestionController {
         }
     }
 
-    private List<Integer> parseJsonToIntList(String json) {
-        if (json == null || json.isEmpty() || json.equals("{}")) {
+    private List<Integer> readIntArray(java.sql.Array sqlArray) {
+        if (sqlArray == null) {
             return new ArrayList<>();
         }
         try {
-            ObjectMapper mapper = new ObjectMapper();
-            return Arrays.asList(mapper.readValue(json, Integer[].class));
+            Integer[] arr = (Integer[]) sqlArray.getArray();
+            return arr != null ? Arrays.asList(arr) : new ArrayList<>();
         } catch (Exception e) {
             return new ArrayList<>();
+        }
+    }
+
+    private Integer[] parseJsonToIntArray(String json) {
+        if (json == null || json.isEmpty() || json.equals("{}")) {
+            return new Integer[0];
+        }
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            if (json.trim().startsWith("{")) {
+                Map<String, Object> map = mapper.readValue(json, Map.class);
+                return map.keySet().stream()
+                        .map(Integer::valueOf)
+                        .toArray(Integer[]::new);
+            }
+            return mapper.readValue(json, Integer[].class);
+        } catch (Exception e) {
+            return new Integer[0];
         }
     }
 
