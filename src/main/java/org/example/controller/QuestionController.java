@@ -11,6 +11,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -211,6 +212,110 @@ public class QuestionController {
         } catch (Exception e) {
             e.printStackTrace();
             return Result.error("注册失败：" + e.getMessage());
+        }
+    }
+
+    // ====================== 用户数据接口 ======================
+    @GetMapping("/gainUserData")
+    public Result<Map<String, Object>> gainUserData(@RequestParam int userId) {
+        try {
+            Integer dataId = jdbcTemplate.queryForObject(
+                    "SELECT data_id FROM users WHERE user_id = ?",
+                    Integer.class, userId);
+
+            if (dataId == null) {
+                return Result.error("用户数据不存在");
+            }
+
+            Map<String, Object> userData = jdbcTemplate.queryForObject(
+                    "SELECT * FROM user_data WHERE data_id = ?",
+                    (rs, row) -> {
+                        Map<String, Object> map = new HashMap<>();
+                        map.put("dataId", rs.getInt("data_id"));
+                        map.put("finished", rs.getInt("finished"));
+                        map.put("mistakeNumbers", rs.getInt("mistake_numbers"));
+                        map.put("correctNumbers", rs.getInt("correct_numbers"));
+                        map.put("numberDay", rs.getInt("number_day"));
+                        map.put("mistakeListId", parseJsonToIntList(rs.getString("mistake_list_id")));
+                        map.put("correctLisId", parseJsonToIntList(rs.getString("correct_lis_id")));
+                        return map;
+                    }, dataId);
+
+            return Result.success(userData);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("获取用户数据失败");
+        }
+    }
+
+    @PostMapping("/updateUserData")
+    public Result<String> updateUserData(@RequestBody Map<String, Object> body) {
+        try {
+            Integer userId = (Integer) body.get("userId");
+            if (userId == null) {
+                return Result.error("userId不能为空");
+            }
+
+            Integer dataId = jdbcTemplate.queryForObject(
+                    "SELECT data_id FROM users WHERE user_id = ?",
+                    Integer.class, userId);
+
+            if (dataId == null) {
+                return Result.error("用户数据不存在");
+            }
+
+            List<String> setClauses = new ArrayList<>();
+            List<Object> params = new ArrayList<>();
+
+            if (body.containsKey("finished")) {
+                setClauses.add("finished = ?");
+                params.add(body.get("finished"));
+            }
+            if (body.containsKey("mistakeNumbers")) {
+                setClauses.add("mistake_numbers = ?");
+                params.add(body.get("mistakeNumbers"));
+            }
+            if (body.containsKey("correctNumbers")) {
+                setClauses.add("correct_numbers = ?");
+                params.add(body.get("correctNumbers"));
+            }
+            if (body.containsKey("numberDay")) {
+                setClauses.add("number_day = ?");
+                params.add(body.get("numberDay"));
+            }
+            if (body.containsKey("mistakeListId")) {
+                setClauses.add("mistake_list_id = ?::json");
+                params.add(new ObjectMapper().writeValueAsString(body.get("mistakeListId")));
+            }
+            if (body.containsKey("correctLisId")) {
+                setClauses.add("correct_lis_id = ?::json");
+                params.add(new ObjectMapper().writeValueAsString(body.get("correctLisId")));
+            }
+
+            if (setClauses.isEmpty()) {
+                return Result.success("无需更新");
+            }
+
+            params.add(dataId);
+            String sql = "UPDATE user_data SET " + String.join(", ", setClauses) + " WHERE data_id = ?";
+            jdbcTemplate.update(sql, params.toArray());
+
+            return Result.success("更新成功");
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("更新用户数据失败");
+        }
+    }
+
+    private List<Integer> parseJsonToIntList(String json) {
+        if (json == null || json.isEmpty() || json.equals("{}")) {
+            return new ArrayList<>();
+        }
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            return Arrays.asList(mapper.readValue(json, Integer[].class));
+        } catch (Exception e) {
+            return new ArrayList<>();
         }
     }
 
