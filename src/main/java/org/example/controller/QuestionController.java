@@ -68,14 +68,82 @@ public class QuestionController {
     }
 
     @PutMapping("/submit")
-    public Result<String> submitAnswer(@RequestBody Question userAnswer) {
+    public Result<String> submitAnswer(@RequestBody Map<String, Object> body) {
+        Integer questionId = (Integer) body.get("question_id");
+        String selectedAnswer = (String) body.get("selected_answer");
+        Integer dataId = (Integer) body.get("data_id");
+        
+        Question userAnswer = new Question();
+        userAnswer.setQuestion_id(questionId);
+        userAnswer.setSelected_answer(selectedAnswer);
+        
         boolean correct = questionService.checkAnswer(userAnswer);
+        
+        if (!correct && dataId != null) {
+            addToWrongList(dataId, questionId);
+        }
+        
         return correct ? Result.success("回答正确") : Result.error("回答错误");
+    }
+    
+    private void addToWrongList(Integer dataId, Integer questionId) {
+        try {
+            List<Integer> mistakeList = new ArrayList<>();
+            
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM user_data WHERE data_id = ?",
+                    Integer.class, dataId);
+            
+            if (count != null && count > 0) {
+                Map<String, Object> userData = jdbcTemplate.queryForObject(
+                        "SELECT mistake_list_id FROM user_data WHERE data_id = ?",
+                        (rs, row) -> {
+                            Map<String, Object> map = new HashMap<>();
+                            map.put("mistake_list_id", readIntArray(rs.getArray("mistake_list_id")));
+                            return map;
+                        }, dataId);
+                
+                mistakeList = (List<Integer>) userData.get("mistake_list_id");
+                if (mistakeList == null) {
+                    mistakeList = new ArrayList<>();
+                }
+            }
+            
+            if (!mistakeList.contains(questionId)) {
+                mistakeList.add(questionId);
+                final List<Integer> finalMistakeList = mistakeList;
+                
+                if (count != null && count > 0) {
+                    jdbcTemplate.update(connection -> {
+                        String sql = "UPDATE user_data SET mistake_list_id = ? WHERE data_id = ?";
+                        var ps = connection.prepareStatement(sql);
+                        ps.setArray(1, connection.createArrayOf("integer", finalMistakeList.toArray(new Integer[0])));
+                        ps.setInt(2, dataId);
+                        return ps;
+                    });
+                } else {
+                    jdbcTemplate.update(connection -> {
+                        String sql = "INSERT INTO user_data (data_id, mistake_list_id) VALUES (?, ?)";
+                        var ps = connection.prepareStatement(sql);
+                        ps.setInt(1, dataId);
+                        ps.setArray(2, connection.createArrayOf("integer", finalMistakeList.toArray(new Integer[0])));
+                        return ps;
+                    });
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     @GetMapping("/wrong")
-    public Result<List<Question>> getWrongQuestions() {
-        return Result.success(questionService.getWrongQuestions());
+    public Result<List<Question>> getWrongQuestions(@RequestParam int dataId) {
+        return Result.success(questionService.getWrongQuestions(dataId));
+    }
+    
+    @GetMapping("/wrong/ids")
+    public Result<List<Integer>> getWrongQuestionIds(@RequestParam int dataId) {
+        return Result.success(questionService.getWrongQuestionIds(dataId));
     }
 
     @GetMapping("/logical")
@@ -316,7 +384,7 @@ public class QuestionController {
         }
         try {
             Integer[] arr = (Integer[]) sqlArray.getArray();
-            return arr != null ? Arrays.asList(arr) : new ArrayList<>();
+            return arr != null ? new ArrayList<>(Arrays.asList(arr)) : new ArrayList<>();
         } catch (Exception e) {
             return new ArrayList<>();
         }

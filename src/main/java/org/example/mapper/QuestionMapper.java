@@ -20,4 +20,11 @@ public interface QuestionMapper {
     List<Question> listDataAnalysis();
     List<Question> listPoliticalTheory();
     List<Question> findAllFromTotal();
+    
+    Question findBySpeechId(Integer questionId);
+    Question findByQuantitativeId(Integer questionId);
+    Question findByCommonSenseId(Integer questionId);
+    Question findByDataAnalysisId(Integer questionId);
+    Question findByPoliticalId(Integer questionId);
+    Question findByTotalId(Integer questionId);
 }

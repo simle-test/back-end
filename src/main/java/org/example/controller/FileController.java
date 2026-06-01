@@ -12,8 +12,7 @@ import java.util.UUID;
 @RequestMapping("/file")
 public class FileController {
 
-    // 直接写死路径，彻底不读配置文件
-    private static final String SAVE_PATH = "/home/ubuntu/back-front/";
+    private static final String SAVE_PATH = System.getProperty("user.dir") + "/uploads/";
 
     @PostMapping("/upload")
     public String upload(@RequestParam("file") MultipartFile file) {
@@ -28,7 +27,7 @@ public class FileController {
             File dest = new File(SAVE_PATH + fileName);
             file.transferTo(dest);
 
-            return "https://www.civilservant.cloud/file/" + fileName;
+            return "http://localhost:8080/uploads/" + fileName;
         } catch (Exception e) {
             e.printStackTrace();
             return "上传失败";

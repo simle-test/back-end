@@ -33,7 +33,7 @@
     </select>
 
     <select id="findById" resultMap="QuestionResultMap">
-        SELECT * FROM logical_judgment WHERE question_id = #{questionId}
+        SELECT * FROM logical_judgment WHERE question_id = CAST(#{questionId} AS VARCHAR)
     </select>
 
     <insert id="insert">
@@ -85,6 +85,30 @@
 
     <select id="findAllFromTotal" resultMap="QuestionResultMap">
         SELECT * FROM questions_total
+    </select>
+
+    <select id="findBySpeechId" resultMap="QuestionResultMap">
+        SELECT * FROM language_understanding WHERE question_id = CAST(#{questionId} AS VARCHAR)
+    </select>
+
+    <select id="findByQuantitativeId" resultMap="QuestionResultMap">
+        SELECT * FROM quantity_relation WHERE question_id = CAST(#{questionId} AS VARCHAR)
+    </select>
+
+    <select id="findByCommonSenseId" resultMap="QuestionResultMap">
+        SELECT * FROM common_sense_judgment WHERE question_id = CAST(#{questionId} AS VARCHAR)
+    </select>
+
+    <select id="findByDataAnalysisId" resultMap="QuestionResultMap">
+        SELECT * FROM material_analysis WHERE question_id = CAST(#{questionId} AS VARCHAR)
+    </select>
+
+    <select id="findByPoliticalId" resultMap="QuestionResultMap">
+        SELECT * FROM political_theory WHERE question_id = CAST(#{questionId} AS VARCHAR)
+    </select>
+
+    <select id="findByTotalId" resultMap="QuestionResultMap">
+        SELECT * FROM questions_total WHERE question_id = CAST(#{questionId} AS VARCHAR) LIMIT 1
     </select>
 
 </mapper>

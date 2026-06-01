@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,8 +51,79 @@ public class QuestionService {
         return false;
     }
 
-    public List<Question> getWrongQuestions() {
-        return List.of();
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    public List<Integer> getWrongQuestionIds(Integer dataId) {
+        try {
+            Map<String, Object> userData = jdbcTemplate.queryForObject(
+                    "SELECT mistake_list_id FROM user_data WHERE data_id = ?",
+                    (rs, row) -> {
+                        Map<String, Object> map = new HashMap<>();
+                        java.sql.Array sqlArray = rs.getArray("mistake_list_id");
+                        List<Integer> list = new ArrayList<>();
+                        if (sqlArray != null) {
+                            Integer[] arr = (Integer[]) sqlArray.getArray();
+                            if (arr != null) {
+                                list = Arrays.asList(arr);
+                            }
+                        }
+                        map.put("mistake_list_id", list);
+                        return map;
+                    }, dataId);
+            
+            List<Integer> mistakeList = (List<Integer>) userData.get("mistake_list_id");
+            return mistakeList != null ? mistakeList : new ArrayList<>();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return new ArrayList<>();
+        }
+    }
+    
+    public List<Question> getWrongQuestions(Integer dataId) {
+        List<Integer> mistakeList = getWrongQuestionIds(dataId);
+        
+        if (mistakeList == null || mistakeList.isEmpty()) {
+            return new ArrayList<>();
+        }
+        
+        List<Question> allQuestions = questionMapper.findAllFromTotal();
+        List<Question> wrongQuestions = new ArrayList<>();
+        
+        for (Integer questionId : mistakeList) {
+            for (Question q : allQuestions) {
+                if (questionId.equals(q.getId())) {
+                    wrongQuestions.add(q);
+                    break;
+                }
+            }
+        }
+        return wrongQuestions;
+    }
+    
+    private Question findQuestionByIdFromAllTables(Integer questionId) {
+        Question question = questionMapper.findByTotalId(questionId);
+        if (question != null) return question;
+        
+        question = questionMapper.findById(questionId);
+        if (question != null) return question;
+        
+        question = questionMapper.findBySpeechId(questionId);
+        if (question != null) return question;
+        
+        question = questionMapper.findByQuantitativeId(questionId);
+        if (question != null) return question;
+        
+        question = questionMapper.findByCommonSenseId(questionId);
+        if (question != null) return question;
+        
+        question = questionMapper.findByDataAnalysisId(questionId);
+        if (question != null) return question;
+        
+        question = questionMapper.findByPoliticalId(questionId);
+        if (question != null) return question;
+        
+        return null;
     }
 
     // ===================== 5大模块方法（完整写好）=====================
