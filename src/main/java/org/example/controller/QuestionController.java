@@ -145,6 +145,58 @@ public class QuestionController {
     public Result<List<Integer>> getWrongQuestionIds(@RequestParam int dataId) {
         return Result.success(questionService.getWrongQuestionIds(dataId));
     }
+    
+    @DeleteMapping("/wrong/delete")
+    public Result<String> removeWrongQuestion(@RequestBody Map<String, Object> body) {
+        Integer dataId = (Integer) body.get("data_id");
+        List<Integer> removeIds = (List<Integer>) body.get("ids");
+        
+        if (dataId == null) {
+            return Result.error("data_id不能为空");
+        }
+        if (removeIds == null || removeIds.isEmpty()) {
+            return Result.error("要删除的ID列表不能为空");
+        }
+        
+        try {
+            List<Integer> mistakeList = new ArrayList<>();
+            
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM user_data WHERE data_id = ?",
+                    Integer.class, dataId);
+            
+            if (count != null && count > 0) {
+                Map<String, Object> userData = jdbcTemplate.queryForObject(
+                        "SELECT mistake_list_id FROM user_data WHERE data_id = ?",
+                        (rs, row) -> {
+                            Map<String, Object> map = new HashMap<>();
+                            map.put("mistake_list_id", readIntArray(rs.getArray("mistake_list_id")));
+                            return map;
+                        }, dataId);
+                
+                mistakeList = (List<Integer>) userData.get("mistake_list_id");
+                if (mistakeList == null) {
+                    mistakeList = new ArrayList<>();
+                }
+            }
+            
+            final List<Integer> finalMistakeList = mistakeList;
+            finalMistakeList.removeAll(removeIds);
+            
+            jdbcTemplate.update(connection -> {
+                String sql = "UPDATE user_data SET mistake_list_id = ? WHERE data_id = ?";
+                var ps = connection.prepareStatement(sql);
+                ps.setArray(1, connection.createArrayOf("integer", finalMistakeList.toArray(new Integer[0])));
+                ps.setInt(2, dataId);
+                return ps;
+            });
+            
+            return Result.success("删除成功");
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("删除失败");
+        }
+    }
 
     @GetMapping("/logical")
     public Result<List<Question>> getLogicalQuestions() {
@@ -180,6 +232,14 @@ public class QuestionController {
             map.computeIfAbsent(categoryId, k -> new ArrayList<>()).add(q);
         }
         return Result.success(map);
+    }
+
+    @GetMapping("/random")
+    public Result<List<Question>> getRandomQuestions(@RequestParam int count) {
+        if (count <= 0) {
+            return Result.error("数量必须大于0");
+        }
+        return Result.success(questionService.getRandomQuestions(count));
     }
 
     // ====================== 登录（修复：接收头像+昵称+自动保存） ======================

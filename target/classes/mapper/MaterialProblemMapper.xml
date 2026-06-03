@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.example.mapper.MaterialProblemMapper">
+
+    <resultMap id="MaterialProblemResultMap" type="org.example.MaterialProblem">
+        <id property="id" column="id"/>
+        <result property="material_id" column="material_id"/>
+        <result property="title" column="title"/>
+        <result property="status" column="status"/>
+        <result property="correct_answer" column="correct_answer"/>
+        <result property="answer_analysis" column="answer_analysis"/>
+        <result property="question_content" column="question_content"
+                typeHandler="org.example.handler.JsonTypeHandler"
+                javaType="org.example.QuestionContent"/>
+    </resultMap>
+
+    <select id="findByMaterialId" resultMap="MaterialProblemResultMap">
+        SELECT * FROM material_problems WHERE material_id = #{materialId}
+    </select>
+
+    <select id="findAll" resultMap="MaterialProblemResultMap">
+        SELECT * FROM material_problems
+    </select>
+
+</mapper>
