@@ -8,8 +8,11 @@ import org.example.QuestionService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -123,10 +126,12 @@ public class QuestionController {
                     });
                 } else {
                     jdbcTemplate.update(connection -> {
-                        String sql = "INSERT INTO user_data (data_id, mistake_list_id) VALUES (?, ?)";
+                        String sql = "INSERT INTO user_data (data_id, finished, mistake_numbers, correct_numbers, number_day, collect_numbers, mistake_list_id, correct_list_id, collect_list_id, last_login_date) VALUES (?, 0, 0, 0, 0, 0, ?, ?, ?, NULL)";
                         var ps = connection.prepareStatement(sql);
                         ps.setInt(1, dataId);
                         ps.setArray(2, connection.createArrayOf("integer", finalMistakeList.toArray(new Integer[0])));
+                        ps.setArray(3, connection.createArrayOf("integer", new Integer[0]));
+                        ps.setArray(4, connection.createArrayOf("integer", new Integer[0]));
                         return ps;
                     });
                 }
@@ -144,6 +149,605 @@ public class QuestionController {
     @GetMapping("/wrong/ids")
     public Result<List<Integer>> getWrongQuestionIds(@RequestParam int dataId) {
         return Result.success(questionService.getWrongQuestionIds(dataId));
+    }
+    
+    @DeleteMapping("/wrong/delete")
+    public Result<String> removeWrongQuestion(@RequestBody Map<String, Object> body) {
+        Integer dataId = (Integer) body.get("data_id");
+        List<Integer> removeIds = (List<Integer>) body.get("ids");
+        
+        if (dataId == null) {
+            return Result.error("data_id不能为空");
+        }
+        if (removeIds == null || removeIds.isEmpty()) {
+            return Result.error("要删除的ID列表不能为空");
+        }
+        
+        try {
+            List<Integer> mistakeList = new ArrayList<>();
+            
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM user_data WHERE data_id = ?",
+                    Integer.class, dataId);
+            
+            if (count != null && count > 0) {
+                Map<String, Object> userData = jdbcTemplate.queryForObject(
+                        "SELECT mistake_list_id FROM user_data WHERE data_id = ?",
+                        (rs, row) -> {
+                            Map<String, Object> map = new HashMap<>();
+                            map.put("mistake_list_id", readIntArray(rs.getArray("mistake_list_id")));
+                            return map;
+                        }, dataId);
+                
+                mistakeList = (List<Integer>) userData.get("mistake_list_id");
+                if (mistakeList == null) {
+                    mistakeList = new ArrayList<>();
+                }
+            }
+            
+            final List<Integer> finalMistakeList = mistakeList;
+            finalMistakeList.removeAll(removeIds);
+            
+            jdbcTemplate.update(connection -> {
+                String sql = "UPDATE user_data SET mistake_list_id = ? WHERE data_id = ?";
+                var ps = connection.prepareStatement(sql);
+                ps.setArray(1, connection.createArrayOf("integer", finalMistakeList.toArray(new Integer[0])));
+                ps.setInt(2, dataId);
+                return ps;
+            });
+            
+            return Result.success("删除成功");
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("删除失败");
+        }
+    }
+
+    @PostMapping("/home/collect")
+    public Result<String> collectQuestion(@RequestBody Map<String, Object> body) {
+        Integer userId = null;
+        Integer questionId = null;
+
+        Object userIdObj = body.get("user_id");
+        Object idObj = body.get("id");
+
+        if (userIdObj instanceof Integer) {
+            userId = (Integer) userIdObj;
+        } else if (userIdObj instanceof String) {
+            userId = Integer.parseInt((String) userIdObj);
+        }
+
+        if (idObj instanceof Integer) {
+            questionId = (Integer) idObj;
+        } else if (idObj instanceof String) {
+            questionId = Integer.parseInt((String) idObj);
+        }
+
+        if (userId == null || questionId == null) {
+            return Result.error("参数不能为空");
+        }
+
+        try {
+            Integer dataId = jdbcTemplate.queryForObject(
+                    "SELECT data_id FROM users WHERE user_id = ?",
+                    Integer.class, userId);
+
+            if (dataId == null) {
+                return Result.error("用户不存在");
+            }
+
+            List<Integer> collectList = new ArrayList<>();
+            
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM user_data WHERE data_id = ?",
+                    Integer.class, dataId);
+
+            if (count != null && count > 0) {
+                Map<String, Object> userData = jdbcTemplate.queryForObject(
+                        "SELECT collect_list_id FROM user_data WHERE data_id = ?",
+                        (rs, row) -> {
+                            Map<String, Object> map = new HashMap<>();
+                            map.put("collect_list_id", readIntArray(rs.getArray("collect_list_id")));
+                            return map;
+                        }, dataId);
+
+                collectList = (List<Integer>) userData.get("collect_list_id");
+                if (collectList == null) {
+                    collectList = new ArrayList<>();
+                }
+            }
+
+            if (!collectList.contains(questionId)) {
+                collectList.add(questionId);
+                
+                final List<Integer> finalCollectList = collectList;
+
+                if (count != null && count > 0) {
+                    jdbcTemplate.update(connection -> {
+                        String sql = "UPDATE user_data SET collect_list_id = ?, collect_numbers = ? WHERE data_id = ?";
+                        var ps = connection.prepareStatement(sql);
+                        ps.setArray(1, connection.createArrayOf("integer", finalCollectList.toArray(new Integer[0])));
+                        ps.setInt(2, finalCollectList.size());
+                        ps.setInt(3, dataId);
+                        return ps;
+                    });
+                }
+
+                return Result.success("收藏成功");
+            } else {
+                return Result.success("已收藏");
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("操作失败");
+        }
+    }
+
+    @GetMapping("/home/getCollect")
+    public Result<List<Question>> getCollectQuestions(@RequestParam int userId) {
+        try {
+            Integer dataId = jdbcTemplate.queryForObject(
+                    "SELECT data_id FROM users WHERE user_id = ?",
+                    Integer.class, userId);
+
+            if (dataId == null) {
+                return Result.error("用户不存在");
+            }
+
+            Map<String, Object> userData = jdbcTemplate.queryForObject(
+                    "SELECT collect_list_id FROM user_data WHERE data_id = ?",
+                    (rs, row) -> {
+                        Map<String, Object> map = new HashMap<>();
+                        map.put("collect_list_id", readIntArray(rs.getArray("collect_list_id")));
+                        return map;
+                    }, dataId);
+
+            List<Integer> collectList = (List<Integer>) userData.get("collect_list_id");
+            if (collectList == null || collectList.isEmpty()) {
+                return Result.success(new ArrayList<>());
+            }
+
+            List<Question> allQuestions = questionService.getAllFromTotal();
+            List<Question> collectQuestions = new ArrayList<>();
+
+            for (Integer questionId : collectList) {
+                for (Question q : allQuestions) {
+                    if (questionId.equals(q.getId())) {
+                        collectQuestions.add(q);
+                        break;
+                    }
+                }
+            }
+
+            return Result.success(collectQuestions);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("获取收藏题目失败");
+        }
+    }
+
+    @DeleteMapping("/home/collectDelete")
+    public Result<String> deleteCollect(@RequestBody Map<String, Object> body) {
+        Integer userId = getUserIdFromBody(body);
+        Integer questionId = getIntegerFromBody(body, "id");
+
+        if (userId == null || questionId == null) {
+            return Result.error("参数不能为空");
+        }
+
+        try {
+            List<Integer> dataIds = jdbcTemplate.queryForList(
+                    "SELECT data_id FROM users WHERE user_id = ?",
+                    Integer.class, userId);
+
+            if (dataIds == null || dataIds.isEmpty()) {
+                return Result.error("用户不存在");
+            }
+            Integer dataId = dataIds.get(0);
+
+            Map<String, Object> userData = jdbcTemplate.queryForObject(
+                    "SELECT collect_list_id FROM user_data WHERE data_id = ?",
+                    (rs, row) -> {
+                        Map<String, Object> map = new HashMap<>();
+                        map.put("collect_list_id", readIntArray(rs.getArray("collect_list_id")));
+                        return map;
+                    }, dataId);
+
+            List<Integer> collectList = (List<Integer>) userData.get("collect_list_id");
+            if (collectList == null) {
+                collectList = new ArrayList<>();
+            }
+
+            collectList.remove(Integer.valueOf(questionId));
+            final List<Integer> finalCollectList = collectList;
+
+            jdbcTemplate.update(connection -> {
+                String sql = "UPDATE user_data SET collect_list_id = ?, collect_numbers = ? WHERE data_id = ?";
+                var ps = connection.prepareStatement(sql);
+                ps.setArray(1, connection.createArrayOf("integer", finalCollectList.toArray(new Integer[0])));
+                ps.setInt(2, finalCollectList.size());
+                ps.setInt(3, dataId);
+                return ps;
+            });
+
+            return Result.success("删除成功");
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("删除失败");
+        }
+    }
+
+    @PostMapping("/home/TodayNumber")
+    public Result<String> updateTodayNumber(@RequestBody Map<String, Object> body) {
+        Integer userId = getUserIdFromBody(body);
+        Integer todayNumber = getIntegerFromBody(body, "TodayNumber");
+
+        if (userId == null) {
+            return Result.error("用户不存在");
+        }
+
+        try {
+            Integer dataId = jdbcTemplate.queryForObject(
+                    "SELECT data_id FROM users WHERE user_id = ?",
+                    Integer.class, userId);
+
+            if (dataId == null) {
+                return Result.error("用户不存在");
+            }
+
+            jdbcTemplate.update(
+                    "UPDATE \"user_data\" SET \"TodayNumber\" = ? WHERE \"data_id\" = ?",
+                    todayNumber != null ? todayNumber : 0, dataId);
+
+            return Result.success("更新成功");
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("更新失败");
+        }
+    }
+
+    @PostMapping("/home/TodayCorrect")
+    public Result<String> updateTodayCorrect(@RequestBody Map<String, Object> body) {
+        Integer userId = getUserIdFromBody(body);
+        Integer todayCorrect = getIntegerFromBody(body, "TodayCorrect");
+
+        if (userId == null) {
+            return Result.error("用户不存在");
+        }
+
+        try {
+            Integer dataId = jdbcTemplate.queryForObject(
+                    "SELECT data_id FROM users WHERE user_id = ?",
+                    Integer.class, userId);
+
+            if (dataId == null) {
+                return Result.error("用户不存在");
+            }
+
+            jdbcTemplate.update(
+                    "UPDATE \"user_data\" SET \"TodayCorrect\" = ? WHERE \"data_id\" = ?",
+                    todayCorrect != null ? todayCorrect : 0, dataId);
+
+            return Result.success("更新成功");
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("更新失败");
+        }
+    }
+
+    @GetMapping("/home/TodayCorrectRate")
+    public Result<Integer> getTodayCorrectRate(@RequestParam int userId) {
+        try {
+            Integer dataId = jdbcTemplate.queryForObject(
+                    "SELECT data_id FROM users WHERE user_id = ?",
+                    Integer.class, userId);
+
+            if (dataId == null) {
+                return Result.error("用户不存在");
+            }
+
+            Map<String, Object> data = jdbcTemplate.queryForObject(
+                    "SELECT \"TodayNumber\", \"TodayCorrect\" FROM \"user_data\" WHERE \"data_id\" = ?",
+                    (rs, row) -> {
+                        Map<String, Object> map = new HashMap<>();
+                        map.put("TodayNumber", rs.getInt("TodayNumber"));
+                        map.put("TodayCorrect", rs.getInt("TodayCorrect"));
+                        return map;
+                    }, dataId);
+
+            int todayNumber = (int) data.get("TodayNumber");
+            int todayCorrect = (int) data.get("TodayCorrect");
+
+            int rate = 0;
+            if (todayNumber > 0) {
+                rate = (int) ((todayCorrect * 100.0) / todayNumber);
+            }
+
+            return Result.success(rate);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("获取失败");
+        }
+    }
+
+    @PostMapping("/home/WeekData")
+    public Result<String> updateWeekData(@RequestBody Map<String, Object> body) {
+        Integer userId = getUserIdFromBody(body);
+
+        if (userId == null) {
+            return Result.error("用户不存在");
+        }
+
+        try {
+            Integer dataId = jdbcTemplate.queryForObject(
+                    "SELECT data_id FROM users WHERE user_id = ?",
+                    Integer.class, userId);
+
+            if (dataId == null) {
+                return Result.error("用户不存在");
+            }
+
+            Integer todayNumber = getIntegerFromBody(body, "TodayNumber");
+            Integer todayCorrect = getIntegerFromBody(body, "TodayCorrect");
+
+            Integer[] weekData = readIntArrayFromBody(body, "WeekData");
+            Integer[] weekCorrect = readIntArrayFromBody(body, "weekCorrect");
+            Integer[] weekWrong = readIntArrayFromBody(body, "weekWrong");
+
+            jdbcTemplate.update(connection -> {
+                String sql = "UPDATE \"user_data\" SET \"weekData\" = ?, \"weekCorrect\" = ?, \"weekWrong\" = ? WHERE \"data_id\" = ?";
+                var ps = connection.prepareStatement(sql);
+                ps.setArray(1, connection.createArrayOf("integer", weekData != null ? weekData : new Integer[]{0,0,0,0,0,0,0}));
+                ps.setArray(2, connection.createArrayOf("integer", weekCorrect != null ? weekCorrect : new Integer[]{0,0,0,0,0,0,0}));
+                ps.setArray(3, connection.createArrayOf("integer", weekWrong != null ? weekWrong : new Integer[]{0,0,0,0,0,0,0}));
+                ps.setInt(4, dataId);
+                return ps;
+            });
+
+            return Result.success("更新成功");
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("更新失败");
+        }
+    }
+
+    @PostMapping("/home/updataData")
+    public Result<String> updataData(@RequestBody(required = false) Map<String, Object> body) {
+        if (body == null) {
+            return Result.error("请求体不能为空");
+        }
+
+        Integer userId = getUserIdFromBody(body);
+
+        if (userId == null) {
+            return Result.error("用户不存在");
+        }
+
+        try {
+            Integer dataId = jdbcTemplate.queryForObject(
+                    "SELECT data_id FROM users WHERE user_id = ?",
+                    Integer.class, userId);
+
+            if (dataId == null) {
+                return Result.error("用户不存在");
+            }
+
+            Integer todayNumber = getIntegerFromBody(body, "TodayNumber");
+            Integer todayCorrect = getIntegerFromBody(body, "TodayCorrect");
+            Integer todayCorrectRate = getIntegerFromBody(body, "TodayCorrectRate");
+
+            jdbcTemplate.update(
+                    "UPDATE \"user_data\" SET \"TodayNumber\" = ?, \"TodayCorrect\" = ?, \"TodayCorrectRate\" = ? WHERE \"data_id\" = ?",
+                    todayNumber != null ? todayNumber : 0,
+                    todayCorrect != null ? todayCorrect : 0,
+                    todayCorrectRate != null ? todayCorrectRate : 0,
+                    dataId);
+
+            return Result.success("更新成功");
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("更新失败");
+        }
+    }
+
+    /**
+     * 每天零点：将前一日数据累积到周数组，然后重置每日数据
+     * 周日零点：额外将周数据归零
+     */
+    @Scheduled(cron = "0 0 0 * * ?")
+    public void resetDailyData() {
+        System.out.println(">>> [定时任务] 触发时间: " + java.time.LocalDateTime.now());
+        try {
+            LocalDate today = LocalDate.now();
+            DayOfWeek currentDay = today.getDayOfWeek();
+            int todayIndex = currentDay.getValue() % 7;
+            int prevDayIndex = (todayIndex - 1 + 7) % 7;
+            boolean isSunday = currentDay == DayOfWeek.SUNDAY;
+
+            System.out.println(">>> [定时任务] 今天: " + currentDay + "(索引" + todayIndex + "), 前一天索引: " + prevDayIndex + ", 是否周日: " + isSunday);
+
+            List<Map<String, Object>> allData = jdbcTemplate.query(
+                "SELECT \"data_id\", \"TodayNumber\", \"TodayCorrect\", \"weekData\", \"weekCorrect\", \"weekWrong\" FROM \"user_data\"",
+                (rs, row) -> {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("data_id", rs.getInt("data_id"));
+                    map.put("todayNumber", rs.getInt("TodayNumber"));
+                    map.put("todayCorrect", rs.getInt("TodayCorrect"));
+                    map.put("weekData", readIntArrayToIntArr(rs.getArray("weekData")));
+                    map.put("weekCorrect", readIntArrayToIntArr(rs.getArray("weekCorrect")));
+                    map.put("weekWrong", readIntArrayToIntArr(rs.getArray("weekWrong")));
+                    return map;
+                });
+
+            System.out.println(">>> [定时任务] 查询到 " + allData.size() + " 条用户数据");
+
+            for (Map<String, Object> data : allData) {
+                int dataId = (int) data.get("data_id");
+                final int dId = dataId;
+
+                if (isSunday) {
+                    Integer[] zeros = new Integer[]{0, 0, 0, 0, 0, 0, 0};
+                    jdbcTemplate.update(connection -> {
+                        String sql = "UPDATE \"user_data\" SET \"weekData\" = ?, \"weekCorrect\" = ?, \"weekWrong\" = ?, \"TodayNumber\" = 0, \"TodayCorrect\" = 0, \"TodayCorrectRate\" = 0 WHERE \"data_id\" = ?";
+                        var ps = connection.prepareStatement(sql);
+                        ps.setArray(1, connection.createArrayOf("integer", zeros));
+                        ps.setArray(2, connection.createArrayOf("integer", zeros));
+                        ps.setArray(3, connection.createArrayOf("integer", zeros));
+                        ps.setInt(4, dId);
+                        return ps;
+                    });
+                } else {
+                    int todayNumber = (int) data.get("todayNumber");
+                    int todayCorrect = (int) data.get("todayCorrect");
+                    Integer[] weekData = (Integer[]) data.get("weekData");
+                    Integer[] weekCorrectArr = (Integer[]) data.get("weekCorrect");
+                    Integer[] weekWrong = (Integer[]) data.get("weekWrong");
+
+                    if (weekData == null) weekData = new Integer[]{0, 0, 0, 0, 0, 0, 0};
+                    if (weekCorrectArr == null) weekCorrectArr = new Integer[]{0, 0, 0, 0, 0, 0, 0};
+                    if (weekWrong == null) weekWrong = new Integer[]{0, 0, 0, 0, 0, 0, 0};
+
+                    weekData[prevDayIndex] += todayNumber;
+                    weekCorrectArr[prevDayIndex] += todayCorrect;
+                    weekWrong[prevDayIndex] += (todayNumber - todayCorrect);
+
+                    System.out.println(">>> [定时任务] data_id=" + dId + " 今日答题: " + todayNumber + " 正确: " + todayCorrect + " 错误: " + (todayNumber - todayCorrect));
+
+                    final Integer[] finalWeekData = weekData;
+                    final Integer[] finalWeekCorrect = weekCorrectArr;
+                    final Integer[] finalWeekWrong = weekWrong;
+
+                    jdbcTemplate.update(connection -> {
+                        String sql = "UPDATE \"user_data\" SET \"weekData\" = ?, \"weekCorrect\" = ?, \"weekWrong\" = ?, \"TodayNumber\" = 0, \"TodayCorrect\" = 0, \"TodayCorrectRate\" = 0 WHERE \"data_id\" = ?";
+                        var ps = connection.prepareStatement(sql);
+                        ps.setArray(1, connection.createArrayOf("integer", finalWeekData));
+                        ps.setArray(2, connection.createArrayOf("integer", finalWeekCorrect));
+                        ps.setArray(3, connection.createArrayOf("integer", finalWeekWrong));
+                        ps.setInt(4, dId);
+                        return ps;
+                    });
+                }
+            }
+
+            if (isSunday) {
+                System.out.println(">>> 每周数据已清零，周数据已更新");
+            } else {
+                System.out.println(">>> 每日数据已零点重置，周数据已更新（" + currentDay + "索引" + prevDayIndex + "）");
+            }
+        } catch (Exception e) {
+            System.err.println(">>> [定时任务] 执行失败!");
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 记录登录天数：每天首次登录累加，当天重复登录不累加
+     */
+    @PostMapping("/home/loginDays")
+    public Result<Integer> recordLoginDays(@RequestBody Map<String, Object> body) {
+        Integer userId = getUserIdFromBody(body);
+        if (userId == null) {
+            return Result.error("用户不存在");
+        }
+
+        try {
+            Integer dataId = jdbcTemplate.queryForObject(
+                    "SELECT data_id FROM users WHERE user_id = ?",
+                    Integer.class, userId);
+
+            if (dataId == null) {
+                return Result.error("用户不存在");
+            }
+
+            Map<String, Object> result = jdbcTemplate.queryForObject(
+                    "SELECT \"number_day\", \"last_login_date\" FROM \"user_data\" WHERE \"data_id\" = ?",
+                    (rs, row) -> {
+                        Map<String, Object> map = new HashMap<>();
+                        map.put("number_day", rs.getInt("number_day"));
+                        map.put("last_login_date", rs.getDate("last_login_date"));
+                        return map;
+                    }, dataId);
+
+            int loginDays = (int) result.get("number_day");
+            java.sql.Date lastLoginDate = (java.sql.Date) result.get("last_login_date");
+
+            LocalDate today = LocalDate.now();
+            boolean isNewDay = (lastLoginDate == null)
+                    || !lastLoginDate.toLocalDate().equals(today);
+
+            if (isNewDay) {
+                loginDays++;
+                jdbcTemplate.update(
+                        "UPDATE \"user_data\" SET \"number_day\" = ?, \"last_login_date\" = ? WHERE \"data_id\" = ?",
+                        loginDays, java.sql.Date.valueOf(today), dataId);
+            }
+
+            return Result.success(loginDays);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("操作失败");
+        }
+    }
+
+    private Integer getUserIdFromBody(Map<String, Object> body) {
+        Object userIdObj = body.get("user_id");
+        if (userIdObj instanceof Integer) {
+            return (Integer) userIdObj;
+        } else if (userIdObj instanceof String) {
+            try {
+                return Integer.parseInt((String) userIdObj);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private Integer getIntegerFromBody(Map<String, Object> body, String key) {
+        Object obj = body.get(key);
+        if (obj instanceof Integer) {
+            return (Integer) obj;
+        } else if (obj instanceof String) {
+            try {
+                return Integer.parseInt((String) obj);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private Integer[] readIntArrayFromBody(Map<String, Object> body, String key) {
+        Object obj = body.get(key);
+        if (obj == null) {
+            return new Integer[]{0,0,0,0,0,0,0};
+        }
+        if (obj instanceof Integer[]) {
+            return (Integer[]) obj;
+        }
+        if (obj instanceof List) {
+            List<?> list = (List<?>) obj;
+            Integer[] result = new Integer[7];
+            for (int i = 0; i < 7 && i < list.size(); i++) {
+                Object item = list.get(i);
+                if (item instanceof Integer) {
+                    result[i] = (Integer) item;
+                } else if (item instanceof String) {
+                    try {
+                        result[i] = Integer.parseInt((String) item);
+                    } catch (NumberFormatException e) {
+                        result[i] = 0;
+                    }
+                } else {
+                    result[i] = 0;
+                }
+            }
+            for (int i = list.size(); i < 7; i++) {
+                result[i] = 0;
+            }
+            return result;
+        }
+        return new Integer[]{0,0,0,0,0,0,0};
     }
 
     @GetMapping("/logical")
@@ -180,6 +784,14 @@ public class QuestionController {
             map.computeIfAbsent(categoryId, k -> new ArrayList<>()).add(q);
         }
         return Result.success(map);
+    }
+
+    @GetMapping("/random")
+    public Result<List<Question>> getRandomQuestions(@RequestParam int count) {
+        if (count <= 0) {
+            return Result.error("数量必须大于0");
+        }
+        return Result.success(questionService.getRandomQuestions(count));
     }
 
     // ====================== 登录（修复：接收头像+昵称+自动保存） ======================
@@ -226,8 +838,14 @@ public class QuestionController {
                         avatarUrl, openid);
 
             } catch (Exception e) {
-                jdbcTemplate.update(
-                        "INSERT INTO user_data (finished,mistake_numbers,correct_numbers,number_day) VALUES (0,0,0,0)");
+                jdbcTemplate.update(connection -> {
+                        String sql = "INSERT INTO user_data (finished, mistake_numbers, correct_numbers, number_day, collect_numbers, mistake_list_id, correct_list_id, collect_list_id, last_login_date) VALUES (0, 0, 0, 0, 0, ?, ?, ?, NULL)";
+                        var ps = connection.prepareStatement(sql);
+                        ps.setArray(1, connection.createArrayOf("integer", new Integer[0]));
+                        ps.setArray(2, connection.createArrayOf("integer", new Integer[0]));
+                        ps.setArray(3, connection.createArrayOf("integer", new Integer[0]));
+                        return ps;
+                    });
                 Integer dataId = jdbcTemplate.queryForObject(
                         "SELECT currval('user_data_data_id_seq')", Integer.class);
 
@@ -271,9 +889,14 @@ public class QuestionController {
             if (count > 0) {
                 return Result.error("用户名已存在");
             }
-            jdbcTemplate.update(
-                    "INSERT INTO user_data (finished, mistake_numbers, correct_numbers, number_day) VALUES (0,0,0,0)"
-            );
+            jdbcTemplate.update(connection -> {
+                    String sql = "INSERT INTO user_data (finished, mistake_numbers, correct_numbers, number_day, collect_numbers, mistake_list_id, correct_list_id, collect_list_id, last_login_date) VALUES (0, 0, 0, 0, 0, ?, ?, ?, NULL)";
+                    var ps = connection.prepareStatement(sql);
+                    ps.setArray(1, connection.createArrayOf("integer", new Integer[0]));
+                    ps.setArray(2, connection.createArrayOf("integer", new Integer[0]));
+                    ps.setArray(3, connection.createArrayOf("integer", new Integer[0]));
+                    return ps;
+                });
             Integer dataId = jdbcTemplate.queryForObject("SELECT currval('user_data_data_id_seq')", Integer.class);
             jdbcTemplate.update(
                     "INSERT INTO users (wechat_openid, username, password, avatar_url, phone, data_id) VALUES (?, ?, ?, ?, ?, ?)",
@@ -291,7 +914,9 @@ public class QuestionController {
     public Result<Map<String, Object>> gainUserData(@RequestParam int dataId) {
         try {
             Map<String, Object> userData = jdbcTemplate.queryForObject(
-                    "SELECT * FROM user_data WHERE data_id = ?",
+                    "SELECT \"data_id\", \"finished\", \"mistake_numbers\", \"correct_numbers\", \"number_day\", \"collect_numbers\", " +
+                    "\"mistake_list_id\", \"correct_list_id\", \"collect_list_id\", \"TodayNumber\", \"TodayCorrect\", " +
+                    "\"TodayCorrectRate\", \"weekData\", \"weekCorrect\", \"weekWrong\", \"last_login_date\" FROM \"user_data\" WHERE \"data_id\" = ?",
                     (rs, row) -> {
                         Map<String, Object> map = new HashMap<>();
                         map.put("data_id", rs.getInt("data_id"));
@@ -299,8 +924,17 @@ public class QuestionController {
                         map.put("mistake_numbers", rs.getInt("mistake_numbers"));
                         map.put("correct_numbers", rs.getInt("correct_numbers"));
                         map.put("number_day", rs.getInt("number_day"));
+                        map.put("collect_numbers", rs.getInt("collect_numbers"));
                         map.put("mistake_list_id", readIntArray(rs.getArray("mistake_list_id")));
-                        map.put("correct_lis_id", readIntArray(rs.getArray("correct_lis_id")));
+                        map.put("correct_list_id", readIntArray(rs.getArray("correct_list_id")));
+                        map.put("collect_list_id", readIntArray(rs.getArray("collect_list_id")));
+                        map.put("TodayNumber", rs.getInt("TodayNumber"));
+                        map.put("TodayCorrect", rs.getInt("TodayCorrect"));
+                        map.put("TodayCorrectRate", rs.getInt("TodayCorrectRate"));
+                        map.put("weekData", readIntArray(rs.getArray("weekData")));
+                        map.put("weekCorrect", readIntArray(rs.getArray("weekCorrect")));
+                        map.put("weekWrong", readIntArray(rs.getArray("weekWrong")));
+                        map.put("last_login_date", rs.getDate("last_login_date"));
                         return map;
                     }, dataId);
 
@@ -338,13 +972,21 @@ public class QuestionController {
                 setClauses.add("number_day = ?");
                 params.add(body.get("number_day"));
             }
+            if (body.containsKey("collect_numbers")) {
+                setClauses.add("collect_numbers = ?");
+                params.add(body.get("collect_numbers"));
+            }
             if (body.containsKey("mistake_list_id")) {
                 setClauses.add("mistake_list_id = ?");
                 params.add(body.get("mistake_list_id"));
             }
-            if (body.containsKey("correct_lis_id")) {
-                setClauses.add("correct_lis_id = ?");
-                params.add(body.get("correct_lis_id"));
+            if (body.containsKey("correct_list_id")) {
+                setClauses.add("correct_list_id = ?");
+                params.add(body.get("correct_list_id"));
+            }
+            if (body.containsKey("collect_list_id")) {
+                setClauses.add("collect_list_id = ?");
+                params.add(body.get("collect_list_id"));
             }
 
             if (setClauses.isEmpty()) {
@@ -359,7 +1001,7 @@ public class QuestionController {
                 int idx = 1;
                 for (String clause : setClauses) {
                     Object val = params.get(idx - 1);
-                    if (clause.startsWith("mistake_list_id") || clause.startsWith("correct_lis_id")) {
+                    if (clause.startsWith("mistake_list_id") || clause.startsWith("correct_list_id") || clause.startsWith("collect_list_id")) {
                         Integer[] arr = parseJsonToIntArray((String) val);
                         ps.setArray(idx, connection.createArrayOf("integer", arr));
                     } else {
@@ -387,6 +1029,18 @@ public class QuestionController {
             return arr != null ? new ArrayList<>(Arrays.asList(arr)) : new ArrayList<>();
         } catch (Exception e) {
             return new ArrayList<>();
+        }
+    }
+
+    private Integer[] readIntArrayToIntArr(java.sql.Array sqlArray) {
+        if (sqlArray == null) {
+            return new Integer[]{0, 0, 0, 0, 0, 0, 0};
+        }
+        try {
+            Integer[] arr = (Integer[]) sqlArray.getArray();
+            return arr != null ? arr : new Integer[]{0, 0, 0, 0, 0, 0, 0};
+        } catch (Exception e) {
+            return new Integer[]{0, 0, 0, 0, 0, 0, 0};
         }
     }
 

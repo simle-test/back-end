@@ -111,4 +111,8 @@
         SELECT * FROM questions_total WHERE question_id = CAST(#{questionId} AS VARCHAR) LIMIT 1
     </select>
 
+    <select id="findRandomQuestions" resultMap="QuestionResultMap">
+        SELECT * FROM questions_total ORDER BY RANDOM() LIMIT #{count}
+    </select>
+
 </mapper>

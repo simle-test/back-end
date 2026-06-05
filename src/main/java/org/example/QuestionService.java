@@ -177,4 +177,31 @@ public class QuestionService {
         return questions;
     }
 
+    public List<Question> getRandomQuestions(Integer count) {
+        List<Question> questions = questionMapper.findRandomQuestions(count);
+
+        List<Integer> materialIds = new ArrayList<>();
+        for (Question q : questions) {
+            if (Boolean.TRUE.equals(q.getHas_material()) && q.getMaterial_id() != null) {
+                materialIds.add(q.getMaterial_id());
+            }
+        }
+
+        Map<Integer, List<MaterialProblem>> materialMap = new HashMap<>();
+        if (!materialIds.isEmpty()) {
+            List<MaterialProblem> allProblems = materialProblemMapper.findAll();
+            for (MaterialProblem mp : allProblems) {
+                materialMap.computeIfAbsent(mp.getMaterial_id(), k -> new ArrayList<>()).add(mp);
+            }
+        }
+
+        for (Question q : questions) {
+            if (q.getMaterial_id() != null) {
+                q.setMaterialProblems(materialMap.getOrDefault(q.getMaterial_id(), new ArrayList<>()));
+            }
+        }
+
+        return questions;
+    }
+
 }

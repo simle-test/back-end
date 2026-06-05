@@ -27,4 +27,5 @@ public interface QuestionMapper {
     Question findByDataAnalysisId(Integer questionId);
     Question findByPoliticalId(Integer questionId);
     Question findByTotalId(Integer questionId);
+    List<Question> findRandomQuestions(Integer count);
 }
