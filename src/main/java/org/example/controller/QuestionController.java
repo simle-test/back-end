@@ -93,11 +93,51 @@ public class QuestionController {
         
         boolean correct = questionService.checkAnswer(userAnswer);
         
+        // 自动更新正确率（必须在 addToWrongList 之前，确保 user_data 行先创建）
+        if (dataId != null) {
+            updateDailyStats(dataId, correct);
+        }
+        
         if (!correct && dataId != null) {
             addToWrongList(dataId, questionId);
         }
         
         return correct ? Result.success("回答正确") : Result.error("回答错误");
+    }
+
+    private void updateDailyStats(Integer dataId, boolean correct) {
+        try {
+            // 直接用 SQL 计算并更新，COALESCE 处理 NULL
+            int updated = jdbcTemplate.update(
+                    "UPDATE user_data SET " +
+                    "\"TodayNumber\" = COALESCE(\"TodayNumber\", 0) + 1, " +
+                    "\"TodayCorrect\" = COALESCE(\"TodayCorrect\", 0) + ?, " +
+                    "\"TodayCorrectRate\" = CAST((COALESCE(\"TodayCorrect\", 0) + ?) * 100.0 / (COALESCE(\"TodayNumber\", 0) + 1) AS INTEGER) " +
+                    "WHERE data_id = ?",
+                    correct ? 1 : 0, correct ? 1 : 0, dataId);
+
+            if (updated == 0) {
+                // 行不存在，新建
+                int todayCorrect = correct ? 1 : 0;
+                int rate = correct ? 100 : 0;
+                jdbcTemplate.update(connection -> {
+                    String sql = "INSERT INTO user_data (data_id, finished, mistake_numbers, correct_numbers, number_day, collect_numbers, mistake_list_id, correct_list_id, collect_list_id, \"TodayNumber\", \"TodayCorrect\", \"TodayCorrectRate\", last_login_date) VALUES (?, 0, 0, 0, 0, 0, ?, ?, ?, 1, ?, ?, NULL)";
+                    var ps = connection.prepareStatement(sql);
+                    ps.setInt(1, dataId);
+                    ps.setArray(2, connection.createArrayOf("integer", new Integer[0]));
+                    ps.setArray(3, connection.createArrayOf("integer", new Integer[0]));
+                    ps.setArray(4, connection.createArrayOf("integer", new Integer[0]));
+                    ps.setInt(5, todayCorrect);
+                    ps.setInt(6, rate);
+                    return ps;
+                });
+            }
+
+            System.out.println("[正确率更新] dataId=" + dataId + " 答" + (correct ? "对" : "错") + " 影响行数=" + (updated > 0 ? updated : "新建"));
+        } catch (Exception e) {
+            System.err.println("[正确率更新失败] dataId=" + dataId + " error=" + e.getMessage());
+            e.printStackTrace();
+        }
     }
     
     private void addToWrongList(Integer dataId, Integer questionId) {
@@ -410,6 +450,8 @@ public class QuestionController {
                     "UPDATE \"user_data\" SET \"TodayNumber\" = ? WHERE \"data_id\" = ?",
                     todayNumber != null ? todayNumber : 0, dataId);
 
+            recalcCorrectRate(dataId);
+
             return Result.success("更新成功");
         } catch (Exception e) {
             e.printStackTrace();
@@ -439,11 +481,24 @@ public class QuestionController {
                     "UPDATE \"user_data\" SET \"TodayCorrect\" = ? WHERE \"data_id\" = ?",
                     todayCorrect != null ? todayCorrect : 0, dataId);
 
+            recalcCorrectRate(dataId);
+
             return Result.success("更新成功");
         } catch (Exception e) {
             e.printStackTrace();
             return Result.error("更新失败");
         }
+    }
+
+    /** 根据当前 TodayNumber 和 TodayCorrect 重新计算并更新 TodayCorrectRate */
+    private void recalcCorrectRate(Integer dataId) {
+        jdbcTemplate.update(
+                "UPDATE \"user_data\" SET \"TodayCorrectRate\" = " +
+                "CASE WHEN COALESCE(\"TodayNumber\", 0) > 0 " +
+                "THEN CAST(COALESCE(\"TodayCorrect\", 0) * 100.0 / \"TodayNumber\" AS INTEGER) " +
+                "ELSE 0 END " +
+                "WHERE \"data_id\" = ?",
+                dataId);
     }
 
     @GetMapping("/home/TodayCorrectRate")
@@ -545,14 +600,14 @@ public class QuestionController {
 
             Integer todayNumber = getIntegerFromBody(body, "TodayNumber");
             Integer todayCorrect = getIntegerFromBody(body, "TodayCorrect");
-            Integer todayCorrectRate = getIntegerFromBody(body, "TodayCorrectRate");
+
+            int tn = todayNumber != null ? todayNumber : 0;
+            int tc = todayCorrect != null ? todayCorrect : 0;
+            int rate = tn > 0 ? (int) (tc * 100.0 / tn) : 0;
 
             jdbcTemplate.update(
                     "UPDATE \"user_data\" SET \"TodayNumber\" = ?, \"TodayCorrect\" = ?, \"TodayCorrectRate\" = ? WHERE \"data_id\" = ?",
-                    todayNumber != null ? todayNumber : 0,
-                    todayCorrect != null ? todayCorrect : 0,
-                    todayCorrectRate != null ? todayCorrectRate : 0,
-                    dataId);
+                    tn, tc, rate, dataId);
 
             return Result.success("更新成功");
         } catch (Exception e) {
