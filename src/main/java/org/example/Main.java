@@ -12,6 +12,6 @@ public class Main {
 
     public static void main(String[] args) {
         SpringApplication.run(Main.class, args);
-        System.out.println(">>> 后端服务启动成功！");
+        System.out.println(">>> 后端启动成功！");
     }
 }
