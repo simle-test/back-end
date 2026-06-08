@@ -39,6 +39,17 @@ public class QuestionController {
     @Value("${wechat.secret}")
     private String wechatSecret;
 
+    // type 转换表：前端英文 key -> 数据库中文
+    private static final Map<String, String> TYPE_MAP = new HashMap<>();
+    static {
+        TYPE_MAP.put("language_understanding", "言语理解");
+        TYPE_MAP.put("quantity_relation", "数量关系");
+        TYPE_MAP.put("logical_judgment", "判断推理");
+        TYPE_MAP.put("material_analysis", "资料分析");
+        TYPE_MAP.put("common_sense_judgment", "常识判断");
+        TYPE_MAP.put("political_theory", "政治理论");
+    }
+
     // ====================== 题目接口 ======================
     @PostMapping("/addQuestion")
     public Result<String> addQuestion(@RequestBody Question question) {
@@ -550,6 +561,49 @@ public class QuestionController {
         }
     }
 
+    @PostMapping("/home/upDataDetailedProblems")
+    public Result<String> upDataDetailedProblems(@RequestBody Map<String, Object> body) {
+        Integer userId = getIntegerFromBody(body, "user_id");
+        Long questionId = getLongFromBody(body, "question_id");
+        String typeKey = (String) body.get("type");
+        Integer statue = getIntegerFromBody(body, "statue");
+        Long time = getLongFromBody(body, "time");
+
+        if (userId == null || questionId == null || typeKey == null) {
+            return Result.error("参数不能为空");
+        }
+
+        String typeCn = TYPE_MAP.get(typeKey);
+        if (typeCn == null) {
+            return Result.error("无效的type值: " + typeKey);
+        }
+
+        try {
+            // 查询是否已存在该用户该类型的该题目记录
+            Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM problems_detail WHERE user_id = ? AND question_id = ? AND type = ?",
+                Integer.class, userId, questionId, typeCn);
+
+            if (count != null && count > 0) {
+                // 已存在：更新时间戳和做题状态
+                jdbcTemplate.update(
+                    "UPDATE problems_detail SET time = ?, statue = ? WHERE user_id = ? AND question_id = ? AND type = ?",
+                    time != null ? time : 0L, statue != null ? statue : 0, userId, questionId, typeCn);
+                return Result.success("更新成功");
+            } else {
+                // 新题目：插入新记录
+                jdbcTemplate.update(
+                    "INSERT INTO problems_detail (user_id, type, question_id, statue, time) VALUES (?, ?, ?, ?, ?)",
+                    userId, typeCn, questionId, statue != null ? statue : 0, time != null ? time : 0L
+                );
+                return Result.success("插入成功");
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("操作失败");
+        }
+    }
+
     /**
      * 每天零点：将前一日数据累积到周数组，然后重置每日数据
      * 周日零点：额外将周数据归零
@@ -710,6 +764,22 @@ public class QuestionController {
         } else if (obj instanceof String) {
             try {
                 return Integer.parseInt((String) obj);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private Long getLongFromBody(Map<String, Object> body, String key) {
+        Object obj = body.get(key);
+        if (obj instanceof Long) {
+            return (Long) obj;
+        } else if (obj instanceof Integer) {
+            return ((Integer) obj).longValue();
+        } else if (obj instanceof String) {
+            try {
+                return Long.parseLong((String) obj);
             } catch (NumberFormatException e) {
                 return null;
             }

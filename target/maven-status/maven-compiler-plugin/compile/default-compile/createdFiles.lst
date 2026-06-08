@@ -1,4 +1,3 @@
-org\example\config\AcceptHeaderFilter.class
 org\example\controller\UploadController.class
 org\example\config\RestTemplateConfig.class
 org\example\controller\QuestionController.class
@@ -8,7 +7,6 @@ org\example\QuestionService.class
 org\example\controller\QuestionController$WechatSession.class
 org\example\entity\UserData.class
 org\example\common\Result.class
-org\example\config\AcceptHeaderFilter$1.class
 org\example\entity\WechatSession.class
 org\example\Main.class
 org\example\mapper\MaterialProblemMapper.class
@@ -21,4 +19,5 @@ org\example\Question.class
 org\example\entity\User.class
 org\example\config\WebConfig.class
 org\example\dao\UserDAO.class
+org\example\scheduler\DailyResetScheduler.class
 org\example\handler\JsonTypeHandler.class
