@@ -2,6 +2,7 @@ package org.example.mapper;
 
 import org.example.Question;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 import java.util.List;
 
 @Mapper
@@ -27,5 +28,7 @@ public interface QuestionMapper {
     Question findByDataAnalysisId(Integer questionId);
     Question findByPoliticalId(Integer questionId);
     Question findByTotalId(Integer questionId);
+    List<Question> findByTotalIds(List<Integer> ids);
     List<Question> findRandomQuestions(Integer count);
+    List<Question> searchQuestions(@Param("keyword") String keyword, @Param("limit") int limit);
 }

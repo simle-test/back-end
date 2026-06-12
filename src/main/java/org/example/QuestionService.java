@@ -1,8 +1,11 @@
 package org.example;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.mapper.MaterialProblemMapper;
 import org.example.mapper.QuestionMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -82,23 +85,104 @@ public class QuestionService {
     
     public List<Question> getWrongQuestions(Integer dataId) {
         List<Integer> mistakeList = getWrongQuestionIds(dataId);
-        
+
         if (mistakeList == null || mistakeList.isEmpty()) {
             return new ArrayList<>();
         }
-        
+
+        // 获取用户 ID
+        Integer userId = null;
+        try {
+            userId = jdbcTemplate.queryForObject(
+                "SELECT user_id FROM users WHERE data_id = ?", Integer.class, dataId);
+        } catch (Exception e) { /* ignore */ }
+
+        // 查 question_status
+        Map<String, Object> questionStatus = loadQuestionStatus(dataId);
+
+        // 批量查错误次数
+        Map<Integer, Integer> wrongCountMap = new HashMap<>();
+        if (userId != null && !mistakeList.isEmpty()) {
+            wrongCountMap = loadWrongCounts(userId, mistakeList);
+        }
+
         List<Question> allQuestions = questionMapper.findAllFromTotal();
         List<Question> wrongQuestions = new ArrayList<>();
-        
+
         for (Integer questionId : mistakeList) {
             for (Question q : allQuestions) {
                 if (questionId.equals(q.getId())) {
+                    // 填 SRS 标签
+                    Map<String, Object> srs = getSrsForQuestion(questionStatus, questionId);
+                    if (srs != null) {
+                        int n = srs.get("n") != null ? ((Number) srs.get("n")).intValue() : 0;
+                        q.setSrsLabel(getSrsLabel(n));
+                    } else {
+                        q.setSrsLabel("待复习");
+                    }
+                    // 填错误次数
+                    q.setWrongCount(wrongCountMap.getOrDefault(questionId, 0));
                     wrongQuestions.add(q);
                     break;
                 }
             }
         }
         return wrongQuestions;
+    }
+
+    private Map<String, Object> loadQuestionStatus(Integer dataId) {
+        try {
+            String json = jdbcTemplate.queryForObject(
+                "SELECT question_status::text FROM user_data WHERE data_id = ?",
+                String.class, dataId);
+            if (json == null || json.isEmpty()) return new HashMap<>();
+            return new ObjectMapper().readValue(json, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception e) {
+            return new HashMap<>();
+        }
+    }
+
+    private Map<String, Object> getSrsForQuestion(Map<String, Object> statusMap, Integer questionId) {
+        Object entry = statusMap.get(String.valueOf(questionId));
+        if (entry instanceof Map) {
+            return (Map<String, Object>) entry;
+        }
+        return null;
+    }
+
+    private String getSrsLabel(int n) {
+        switch (n) {
+            case 0: return "待复习";
+            case 1: return "正确1/3";
+            case 2: return "正确2/3";
+            default: return "已掌握";
+        }
+    }
+
+    private Map<Integer, Integer> loadWrongCounts(Integer userId, List<Integer> questionIds) {
+        Map<Integer, Integer> result = new HashMap<>();
+        if (questionIds.isEmpty()) return result;
+
+        StringBuilder sql = new StringBuilder(
+            "SELECT question_id, COUNT(*) AS cnt FROM problems_detail WHERE user_id = ? AND statue = -1 AND question_id IN (");
+        for (int i = 0; i < questionIds.size(); i++) {
+            sql.append(i == 0 ? "?" : ",?");
+        }
+        sql.append(") GROUP BY question_id");
+
+        Object[] params = new Object[1 + questionIds.size()];
+        params[0] = userId;
+        for (int i = 0; i < questionIds.size(); i++) {
+            params[i + 1] = questionIds.get(i);
+        }
+
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), params);
+        for (Map<String, Object> row : rows) {
+            Number qid = (Number) row.get("question_id");
+            Number cnt = (Number) row.get("cnt");
+            result.put(qid.intValue(), cnt.intValue());
+        }
+        return result;
     }
     
     private Question findQuestionByIdFromAllTables(Integer questionId) {
@@ -202,6 +286,13 @@ public class QuestionService {
         }
 
         return questions;
+    }
+
+    public List<Question> searchQuestions(String keyword, int limit) {
+        if (keyword == null || keyword.trim().isEmpty()) {
+            return questionMapper.findRandomQuestions(Math.min(limit, 20));
+        }
+        return questionMapper.searchQuestions(keyword.trim(), Math.max(limit, 1));
     }
 
 }

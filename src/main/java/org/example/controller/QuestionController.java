@@ -1,5 +1,6 @@
 package org.example.controller;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.common.Result;
 import org.example.entity.User;
@@ -16,6 +17,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -31,6 +33,9 @@ public class QuestionController {
     private JdbcTemplate jdbcTemplate;
 
     @Autowired
+    private org.example.mapper.QuestionMapper questionMapper;
+
+    @Autowired
     private RestTemplate restTemplate;
 
     @Value("${wechat.appid}")
@@ -42,13 +47,40 @@ public class QuestionController {
     // type 转换表：前端英文 key -> 数据库中文
     private static final Map<String, String> TYPE_MAP = new HashMap<>();
     static {
+        // 完整 key
         TYPE_MAP.put("language_understanding", "言语理解");
         TYPE_MAP.put("quantity_relation", "数量关系");
         TYPE_MAP.put("logical_judgment", "判断推理");
         TYPE_MAP.put("material_analysis", "资料分析");
         TYPE_MAP.put("common_sense_judgment", "常识判断");
         TYPE_MAP.put("political_theory", "政治理论");
+        // 短 key（前端 currentType 直接使用）
+        TYPE_MAP.put("speech", "言语理解");
+        TYPE_MAP.put("quantitative", "数量关系");
+        TYPE_MAP.put("logical", "判断推理");
+        TYPE_MAP.put("data", "资料分析");
+        TYPE_MAP.put("common", "常识判断");
+        TYPE_MAP.put("political", "政治理论");
     }
+
+    // 反向转换表：数据库中文 -> 前端英文 key
+    private static final Map<String, String> REVERSE_TYPE_MAP = new HashMap<>();
+    static {
+        REVERSE_TYPE_MAP.put("言语理解", "language_understanding");
+        REVERSE_TYPE_MAP.put("数量关系", "quantity_relation");
+        REVERSE_TYPE_MAP.put("判断推理", "logical_judgment");
+        REVERSE_TYPE_MAP.put("资料分析", "material_analysis");
+        REVERSE_TYPE_MAP.put("常识判断", "common_sense_judgment");
+        REVERSE_TYPE_MAP.put("政治理论", "political_theory");
+    }
+
+    // ====================== SM-2 间隔重复算法常量 ======================
+    /** 初始难易度因子（SuperMemo 默认 2.5） */
+    private static final double INITIAL_EF = 2.5;
+    /** 最低难易度因子 */
+    private static final double MIN_EF = 1.3;
+    /** 达到此连续答对次数即标记"已掌握"，从错题表移除 */
+    private static final int MASTERY_THRESHOLD = 3;
 
     // ====================== 题目接口 ======================
     @PostMapping("/addQuestion")
@@ -86,23 +118,224 @@ public class QuestionController {
         Integer questionId = (Integer) body.get("question_id");
         String selectedAnswer = (String) body.get("selected_answer");
         Integer dataId = (Integer) body.get("data_id");
-        
+        Integer userId = getIntegerFromBody(body, "user_id");
+
         Question userAnswer = new Question();
         userAnswer.setQuestion_id(questionId);
         userAnswer.setSelected_answer(selectedAnswer);
-        
+
         boolean correct = questionService.checkAnswer(userAnswer);
-        
-        // 自动更新正确率（必须在 addToWrongList 之前，确保 user_data 行先创建）
+
         if (dataId != null) {
             updateDailyStats(dataId, correct);
         }
-        
-        if (!correct && dataId != null) {
-            addToWrongList(dataId, questionId);
+
+        if (dataId != null) {
+            // SM-2 间隔重复算法
+            if (correct) {
+                processCorrectAnswer(dataId, questionId);
+            } else {
+                processWrongAnswer(dataId, questionId);
+            }
         }
-        
+
         return correct ? Result.success("回答正确") : Result.error("回答错误");
+    }
+
+    // ====================== SM-2 间隔重复算法核心方法 ======================
+
+    /**
+     * 加载指定题目的 SRS 状态
+     */
+    private Map<String, Object> loadSrsState(Integer dataId, Integer questionId) {
+        try {
+            String json = jdbcTemplate.queryForObject(
+                "SELECT question_status->?::text FROM user_data WHERE data_id = ?",
+                String.class, questionId.toString(), dataId);
+            if (json == null || json.isEmpty()) return null;
+            return new ObjectMapper().readValue(json, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 保存指定题目的 SRS 状态
+     */
+    private void saveSrsState(Integer dataId, Integer questionId, Map<String, Object> state) {
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            String json = mapper.writeValueAsString(state);
+            jdbcTemplate.update(
+                "UPDATE user_data SET question_status = jsonb_set(COALESCE(question_status, '{}'), ?::text[], ?::jsonb, true) WHERE data_id = ?",
+                new String[]{questionId.toString()}, json, dataId);
+            // 同步更新 question_status 列中的掌握/未掌握标记（由调用方负责）
+        } catch (Exception e) {
+            System.err.println("[SRS] 保存状态失败 dataId=" + dataId + " qid=" + questionId + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * 答对：SM-2 算法 — 到期复习才累加 n，提前复习只记录不变 n
+     */
+    private void processCorrectAnswer(Integer dataId, Integer questionId) {
+        Map<String, Object> srs = loadSrsState(dataId, questionId);
+        LocalDate today = LocalDate.now();
+
+        double ef = INITIAL_EF;
+        int n = 0;
+        int interval = 0;
+        LocalDate lastNextReview = null;
+
+        if (srs != null) {
+            Object efObj = srs.get("ef");
+            Object nObj = srs.get("n");
+            Object ivObj = srs.get("interval");
+            Object nrObj = srs.get("nextReview");
+            ef = efObj != null ? ((Number) efObj).doubleValue() : INITIAL_EF;
+            n = nObj != null ? ((Number) nObj).intValue() : 0;
+            interval = ivObj != null ? ((Number) ivObj).intValue() : 0;
+            if (nrObj != null) {
+                try { lastNextReview = LocalDate.parse(nrObj.toString()); } catch (Exception e) { /* ignore */ }
+            }
+        }
+
+        // 只有复习到期（或首次）才累加 n；提前答对只记录，不推进
+        boolean isReview = (lastNextReview == null) || !today.isBefore(lastNextReview);
+
+        if (isReview) {
+            n = n + 1;
+            if (n == 1) {
+                interval = 1;
+            } else if (n == 2) {
+                interval = 3;
+            } else {
+                interval = (int) Math.round(interval * ef);
+            }
+            ef = Math.max(MIN_EF, ef + 0.1);
+        }
+        // 提前答对：n / ef / interval 都不变，只更新 nextReview 为今天（避免今天反复刷）
+
+        Map<String, Object> newState = new LinkedHashMap<>();
+        newState.put("ef", ef);
+        newState.put("n", n);
+        newState.put("interval", interval);
+        newState.put("nextReview", today.plusDays(isReview ? interval : 1).toString());
+        saveSrsState(dataId, questionId, newState);
+
+        if (n >= MASTERY_THRESHOLD) {
+            markAsMastered(dataId, questionId);
+        }
+
+        System.out.println("[SRS] 答对 qid=" + questionId + " n=" + n + " isReview=" + isReview + " interval=" + interval);
+    }
+
+    /**
+     * 答错：重置 n，降低 EF，重新加入错题表
+     */
+    private void processWrongAnswer(Integer dataId, Integer questionId) {
+        Map<String, Object> srs = loadSrsState(dataId, questionId);
+        double ef = INITIAL_EF;
+        int oldN = 0;
+
+        if (srs != null) {
+            Object efObj = srs.get("ef");
+            Object nObj = srs.get("n");
+            ef = efObj != null ? ((Number) efObj).doubleValue() : INITIAL_EF;
+            oldN = nObj != null ? ((Number) nObj).intValue() : 0;
+        }
+
+        ef = Math.max(MIN_EF, ef - 0.2);
+
+        Map<String, Object> newState = new LinkedHashMap<>();
+        newState.put("ef", ef);
+        newState.put("n", 0);
+        newState.put("interval", 0);
+        newState.put("nextReview", LocalDate.now().toString());
+        saveSrsState(dataId, questionId, newState);
+
+        addToWrongList(dataId, questionId);
+
+        System.out.println("[SRS] 答错 qid=" + questionId + " n=" + oldN + "→0 ef=" + ef);
+    }
+
+    /**
+     * 标记题目为已掌握：从错题表移除，加入已掌握列表
+     */
+    private void markAsMastered(Integer dataId, Integer questionId) {
+        try {
+            // 1. 从错题表移除
+            List<Integer> mistakeList = loadMistakeList(dataId);
+            mistakeList.remove(questionId);
+            updateMistakeList(dataId, mistakeList);
+
+            // 2. 加入 correct_list_id（已掌握列表）
+            List<Integer> correctList = loadIntArrayColumn(dataId, "correct_list_id");
+            if (!correctList.contains(questionId)) {
+                correctList.add(questionId);
+                updateIntArrayColumn(dataId, "correct_list_id", correctList);
+            }
+
+            System.out.println("[SRS] 已掌握 qid=" + questionId + " dataId=" + dataId);
+        } catch (Exception e) {
+            System.err.println("[SRS] 标记已掌握失败: " + e.getMessage());
+        }
+    }
+
+    // ====================== 辅助 SQL 方法 ======================
+
+    private List<Integer> loadMistakeList(Integer dataId) {
+        try {
+            Map<String, Object> row = jdbcTemplate.queryForObject(
+                "SELECT mistake_list_id FROM user_data WHERE data_id = ?",
+                (rs, rn) -> {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("mistake_list_id", readIntArray(rs.getArray("mistake_list_id")));
+                    return map;
+                }, dataId);
+            List<Integer> list = (List<Integer>) row.get("mistake_list_id");
+            return list != null ? list : new ArrayList<>();
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
+    }
+
+    private void updateMistakeList(Integer dataId, List<Integer> list) {
+        final List<Integer> finalList = list;
+        jdbcTemplate.update(connection -> {
+            String sql = "UPDATE user_data SET mistake_list_id = ? WHERE data_id = ?";
+            var ps = connection.prepareStatement(sql);
+            ps.setArray(1, connection.createArrayOf("integer", finalList.toArray(new Integer[0])));
+            ps.setInt(2, dataId);
+            return ps;
+        });
+    }
+
+    private List<Integer> loadIntArrayColumn(Integer dataId, String column) {
+        try {
+            String sql = String.format("SELECT %s FROM user_data WHERE data_id = ?", column);
+            Map<String, Object> row = jdbcTemplate.queryForObject(sql,
+                (rs, rn) -> {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put(column, readIntArray(rs.getArray(column)));
+                    return map;
+                }, dataId);
+            List<Integer> list = (List<Integer>) row.get(column);
+            return list != null ? list : new ArrayList<>();
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
+    }
+
+    private void updateIntArrayColumn(Integer dataId, String column, List<Integer> list) {
+        final List<Integer> finalList = list;
+        jdbcTemplate.update(connection -> {
+            String sql = String.format("UPDATE user_data SET %s = ? WHERE data_id = ?", column);
+            var ps = connection.prepareStatement(sql);
+            ps.setArray(1, connection.createArrayOf("integer", finalList.toArray(new Integer[0])));
+            ps.setInt(2, dataId);
+            return ps;
+        });
     }
 
     private void updateDailyStats(Integer dataId, boolean correct) {
@@ -121,7 +354,7 @@ public class QuestionController {
                 int todayCorrect = correct ? 1 : 0;
                 int rate = correct ? 100 : 0;
                 jdbcTemplate.update(connection -> {
-                    String sql = "INSERT INTO user_data (data_id, finished, mistake_numbers, correct_numbers, number_day, collect_numbers, mistake_list_id, correct_list_id, collect_list_id, \"TodayNumber\", \"TodayCorrect\", \"TodayCorrectRate\", last_login_date) VALUES (?, 0, 0, 0, 0, 0, ?, ?, ?, 1, ?, ?, NULL)";
+                    String sql = "INSERT INTO user_data (data_id, finished, mistake_numbers, correct_numbers, number_day, collect_numbers, mistake_list_id, correct_list_id, collect_list_id, question_status, \"TodayNumber\", \"TodayCorrect\", \"TodayCorrectRate\", last_login_date) VALUES (?, 0, 0, 0, 0, 0, ?, ?, ?, '{}', 1, ?, ?, NULL)";
                     var ps = connection.prepareStatement(sql);
                     ps.setInt(1, dataId);
                     ps.setArray(2, connection.createArrayOf("integer", new Integer[0]));
@@ -177,7 +410,7 @@ public class QuestionController {
                     });
                 } else {
                     jdbcTemplate.update(connection -> {
-                        String sql = "INSERT INTO user_data (data_id, finished, mistake_numbers, correct_numbers, number_day, collect_numbers, mistake_list_id, correct_list_id, collect_list_id, last_login_date) VALUES (?, 0, 0, 0, 0, 0, ?, ?, ?, NULL)";
+                        String sql = "INSERT INTO user_data (data_id, finished, mistake_numbers, correct_numbers, number_day, collect_numbers, mistake_list_id, correct_list_id, collect_list_id, question_status, last_login_date) VALUES (?, 0, 0, 0, 0, 0, ?, ?, ?, '{}', NULL)";
                         var ps = connection.prepareStatement(sql);
                         ps.setInt(1, dataId);
                         ps.setArray(2, connection.createArrayOf("integer", finalMistakeList.toArray(new Integer[0])));
@@ -490,6 +723,35 @@ public class QuestionController {
         }
     }
 
+    @GetMapping("/problem/gainProblemDetail")
+    public Result<List<Question>> gainProblemDetail(@RequestParam int user_id) {
+        try {
+            // 1. 从 problems_detail 查询该用户最近3道题（按最新时间戳排序）
+            List<Long> ids = jdbcTemplate.query(
+                "SELECT question_id, MAX(time) AS t FROM problems_detail WHERE user_id = ? GROUP BY question_id ORDER BY t DESC LIMIT 3",
+                (rs, row) -> rs.getLong("question_id"),
+                user_id);
+
+            if (ids.isEmpty()) {
+                return Result.success(new ArrayList<>());
+            }
+
+            // 2. 转为 Integer 列表给 MyBatis 查询
+            List<Integer> intIds = new ArrayList<>();
+            for (Long id : ids) {
+                intIds.add(id.intValue());
+            }
+
+            // 3. 从 questions_total 批量查询题目详情
+            List<Question> questions = questionMapper.findByTotalIds(intIds);
+
+            return Result.success(questions);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("查询失败");
+        }
+    }
+
     /** 根据当前 TodayNumber 和 TodayCorrect 重新计算并更新 TodayCorrectRate */
     private void recalcCorrectRate(Integer dataId) {
         jdbcTemplate.update(
@@ -623,6 +885,7 @@ public class QuestionController {
         String typeKey = (String) body.get("type");
         Integer statue = getIntegerFromBody(body, "statue");
         Long time = getLongFromBody(body, "time");
+        String selectedOption = (String) body.get("selected_option");
 
         if (userId == null || questionId == null || typeKey == null) {
             return Result.error("参数不能为空");
@@ -634,28 +897,51 @@ public class QuestionController {
         }
 
         try {
-            // 查询是否已存在该用户该类型的该题目记录
-            Integer count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM problems_detail WHERE user_id = ? AND question_id = ? AND type = ?",
-                Integer.class, userId, questionId, typeCn);
+            // 每次答题都插入新记录，不做去重，以便统计错误次数
+            jdbcTemplate.update(
+                "INSERT INTO problems_detail (user_id, type, question_id, statue, time, selected_option) VALUES (?, ?, ?, ?, ?, ?)",
+                userId, typeCn, questionId, statue != null ? statue : 0, time != null ? time : 0L, selectedOption
+            );
 
-            if (count != null && count > 0) {
-                // 已存在：更新时间戳和做题状态
-                jdbcTemplate.update(
-                    "UPDATE problems_detail SET time = ?, statue = ? WHERE user_id = ? AND question_id = ? AND type = ?",
-                    time != null ? time : 0L, statue != null ? statue : 0, userId, questionId, typeCn);
-                return Result.success("更新成功");
-            } else {
-                // 新题目：插入新记录
-                jdbcTemplate.update(
-                    "INSERT INTO problems_detail (user_id, type, question_id, statue, time) VALUES (?, ?, ?, ?, ?)",
-                    userId, typeCn, questionId, statue != null ? statue : 0, time != null ? time : 0L
-                );
-                return Result.success("插入成功");
+            // SRS 间隔重复处理：根据 statue 判断对错
+            Integer dataId = jdbcTemplate.queryForObject(
+                "SELECT data_id FROM users WHERE user_id = ?", Integer.class, userId);
+            if (dataId != null) {
+                boolean isCorrect = statue != null && statue == 1;
+                if (isCorrect) {
+                    processCorrectAnswer(dataId, questionId.intValue());
+                } else {
+                    processWrongAnswer(dataId, questionId.intValue());
+                }
             }
+
+            return Result.success("操作成功");
         } catch (Exception e) {
             e.printStackTrace();
             return Result.error("操作失败");
+        }
+    }
+
+    @GetMapping("/home/problems_detail")
+    public Result<List<Map<String, Object>>> getProblemsDetail(@RequestParam int user_id) {
+        try {
+            List<Map<String, Object>> list = jdbcTemplate.query(
+                "SELECT user_id, type, question_id, statue, time, selected_option FROM problems_detail WHERE user_id = ?",
+                (rs, row) -> {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("user_id", rs.getInt("user_id"));
+                    String typeCn = rs.getString("type");
+                    map.put("type", REVERSE_TYPE_MAP.getOrDefault(typeCn, typeCn));
+                    map.put("question_id", rs.getLong("question_id"));
+                    map.put("statue", rs.getInt("statue"));
+                    map.put("time", rs.getLong("time"));
+                    map.put("selected_option", rs.getString("selected_option"));
+                    return map;
+                }, user_id);
+            return Result.success(list);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("查询失败");
         }
     }
 
@@ -900,6 +1186,13 @@ public class QuestionController {
         return Result.success(questionService.getDataAnalysis());
     }
 
+    @GetMapping("/select")
+    public Result<List<Question>> searchQuestions(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "30") int limit) {
+        return Result.success(questionService.searchQuestions(keyword, limit));
+    }
+
     @GetMapping("/all")
     public Result<Map<String, List<Question>>> getAllModules() {
         List<Question> allQuestions = questionService.getAllFromTotal();
@@ -1041,7 +1334,7 @@ public class QuestionController {
             Map<String, Object> userData = jdbcTemplate.queryForObject(
                     "SELECT \"data_id\", \"finished\", \"mistake_numbers\", \"correct_numbers\", \"number_day\", \"collect_numbers\", " +
                     "\"mistake_list_id\", \"correct_list_id\", \"collect_list_id\", \"TodayNumber\", \"TodayCorrect\", " +
-                    "\"TodayCorrectRate\", \"weekData\", \"weekCorrect\", \"weekWrong\", \"last_login_date\" FROM \"user_data\" WHERE \"data_id\" = ?",
+                    "\"TodayCorrectRate\", \"weekData\", \"weekCorrect\", \"weekWrong\", \"last_login_date\", \"question_status\" FROM \"user_data\" WHERE \"data_id\" = ?",
                     (rs, row) -> {
                         Map<String, Object> map = new HashMap<>();
                         map.put("data_id", rs.getInt("data_id"));
@@ -1060,6 +1353,7 @@ public class QuestionController {
                         map.put("weekCorrect", readIntArray(rs.getArray("weekCorrect")));
                         map.put("weekWrong", readIntArray(rs.getArray("weekWrong")));
                         map.put("last_login_date", rs.getDate("last_login_date"));
+                        map.put("question_status", rs.getString("question_status"));
                         return map;
                     }, dataId);
 
@@ -1142,6 +1436,59 @@ public class QuestionController {
         } catch (Exception e) {
             e.printStackTrace();
             return Result.error("更新用户数据失败");
+        }
+    }
+
+    /** 清除用户所有做题相关数据 */
+    @PostMapping("/delUserData")
+    public Result<String> delUserData(@RequestParam("data_id") Integer dataId) {
+        if (dataId == null) {
+            return Result.error("data_id不能为空");
+        }
+
+        try {
+            // 1. 清除 problems_detail 表中该用户的所有记录
+            List<Integer> userIds = jdbcTemplate.queryForList(
+                "SELECT user_id FROM users WHERE data_id = ?", Integer.class, dataId);
+            if (!userIds.isEmpty()) {
+                Integer userId = userIds.get(0);
+                jdbcTemplate.update("DELETE FROM problems_detail WHERE user_id = ?", userId);
+            }
+
+            // 2. 重置 user_data 行
+            jdbcTemplate.update(connection -> {
+                String sql = "UPDATE user_data SET " +
+                    "finished = 0, " +
+                    "mistake_numbers = 0, " +
+                    "correct_numbers = 0, " +
+                    "number_day = 0, " +
+                    "collect_numbers = 0, " +
+                    "mistake_list_id = ?, " +
+                    "correct_list_id = ?, " +
+                    "collect_list_id = ?, " +
+                    "question_status = '{}', " +
+                    "\"TodayNumber\" = 0, " +
+                    "\"TodayCorrect\" = 0, " +
+                    "\"TodayCorrectRate\" = 0, " +
+                    "\"weekData\" = ?, " +
+                    "\"weekCorrect\" = ?, " +
+                    "\"weekWrong\" = ? " +
+                    "WHERE data_id = ?";
+                var ps = connection.prepareStatement(sql);
+                ps.setArray(1, connection.createArrayOf("integer", new Integer[0]));
+                ps.setArray(2, connection.createArrayOf("integer", new Integer[0]));
+                ps.setArray(3, connection.createArrayOf("integer", new Integer[0]));
+                ps.setArray(4, connection.createArrayOf("integer", new Integer[]{0,0,0,0,0,0,0}));
+                ps.setArray(5, connection.createArrayOf("integer", new Integer[]{0,0,0,0,0,0,0}));
+                ps.setArray(6, connection.createArrayOf("integer", new Integer[]{0,0,0,0,0,0,0}));
+                ps.setInt(7, dataId);
+                return ps;
+            });
+
+            return Result.success("用户数据已重置");
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("重置失败");
         }
     }
 

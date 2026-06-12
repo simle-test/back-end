@@ -30,6 +30,10 @@ public class Question {
     private Integer material_id;
     private List<MaterialProblem> materialProblems;
 
+    // SRS/错题统计相关（非数据库字段，接口返回时填充）
+    private Integer wrongCount;
+    private String srsLabel;
+
     // --- Getter 和 Setter 方法 ---
 
     public Integer getId() {
@@ -186,5 +190,21 @@ public class Question {
 
     public void setMaterialProblems(List<MaterialProblem> materialProblems) {
         this.materialProblems = materialProblems;
+    }
+
+    public Integer getWrongCount() {
+        return wrongCount;
+    }
+
+    public void setWrongCount(Integer wrongCount) {
+        this.wrongCount = wrongCount;
+    }
+
+    public String getSrsLabel() {
+        return srsLabel;
+    }
+
+    public void setSrsLabel(String srsLabel) {
+        this.srsLabel = srsLabel;
     }
 }
