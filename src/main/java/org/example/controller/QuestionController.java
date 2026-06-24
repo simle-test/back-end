@@ -946,6 +946,84 @@ public class QuestionController {
     }
 
     /**
+     * 模块正确率分析：按题型聚合做题记录，返回每种题型的 total / correct
+     */
+    @GetMapping("/analysis/moduleAccuracy")
+    public Result<List<Map<String, Object>>> getModuleAccuracy(@RequestParam int dataId) {
+        try {
+            // users 表才有 user_id，user_data 只有 data_id
+            Integer userId = jdbcTemplate.queryForObject(
+                    "SELECT user_id FROM users WHERE data_id = ?",
+                    Integer.class, dataId);
+            if (userId == null) {
+                return Result.error("用户不存在");
+            }
+
+            List<Map<String, Object>> list = jdbcTemplate.query(
+                    "SELECT type, COUNT(*) AS total, " +
+                    "SUM(CASE WHEN statue = 1 THEN 1 ELSE 0 END) AS correct " +
+                    "FROM problems_detail WHERE user_id = ? " +
+                    "GROUP BY type ORDER BY type",
+                    (rs, row) -> {
+                        Map<String, Object> map = new HashMap<>();
+                        String typeCn = rs.getString("type");
+                        map.put("type", typeCn);
+                        map.put("total", rs.getInt("total"));
+                        map.put("correct", rs.getInt("correct"));
+                        return map;
+                    }, userId);
+            return Result.success(list);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("查询失败");
+        }
+    }
+
+    /**
+     * 模块完成进度：该题型用户已做过的题目数 / 该题型总题目数
+     */
+    @GetMapping("/analysis/moduleProgress")
+    public Result<List<Map<String, Object>>> getModuleProgress(@RequestParam int dataId) {
+        try {
+            Integer userId = jdbcTemplate.queryForObject(
+                    "SELECT user_id FROM users WHERE data_id = ?",
+                    Integer.class, dataId);
+            if (userId == null) {
+                return Result.error("用户不存在");
+            }
+
+            Map<String, Integer> doneMap = new HashMap<>();
+            jdbcTemplate.query(
+                    "SELECT type, COUNT(DISTINCT question_id) AS done " +
+                    "FROM problems_detail WHERE user_id = ? GROUP BY type",
+                    (rs) -> { doneMap.put(rs.getString("type"), rs.getInt("done")); },
+                    userId);
+
+            Map<String, Integer> totalMap = new HashMap<>();
+            jdbcTemplate.query(
+                    "SELECT category_id, COUNT(*) AS total FROM questions_total GROUP BY category_id",
+                    (rs) -> {
+                        String catId = rs.getString("category_id");
+                        totalMap.put(TYPE_MAP.getOrDefault(catId, catId), rs.getInt("total"));
+                    });
+
+            String[] order = {"言语理解", "数量关系", "判断推理", "资料分析", "常识判断", "政治理论"};
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (String name : order) {
+                Map<String, Object> map = new HashMap<>();
+                map.put("type", name);
+                map.put("total", totalMap.getOrDefault(name, 0));
+                map.put("done", doneMap.getOrDefault(name, 0));
+                result.add(map);
+            }
+            return Result.success(result);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("查询失败");
+        }
+    }
+
+    /**
      * 每天零点：将前一日数据累积到周数组，然后重置每日数据
      * 周日零点：额外将周数据归零
      */
@@ -1327,6 +1405,43 @@ public class QuestionController {
         }
     }
 
+    // ====================== 考试试卷接口 ======================
+
+    @GetMapping("/exam/papers")
+    public Result<List<Map<String, Object>>> getExamPapers() {
+        try {
+            List<Map<String, Object>> papers = jdbcTemplate.query(
+                "SELECT source, COUNT(*) AS count FROM questions_total WHERE source IS NOT NULL AND source != '' GROUP BY source ORDER BY count DESC",
+                (rs, row) -> {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("source", rs.getString("source"));
+                    map.put("count", rs.getInt("count"));
+                    return map;
+                });
+            return Result.success(papers);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("获取试卷列表失败");
+        }
+    }
+
+    @GetMapping("/exam/problems")
+    public Result<List<Question>> getExamProblems(@RequestParam String source) {
+        try {
+            List<Question> all = questionService.getAllFromTotal();
+            List<Question> filtered = new ArrayList<>();
+            for (Question q : all) {
+                if (source.equals(q.getSource())) {
+                    filtered.add(q);
+                }
+            }
+            return Result.success(filtered);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("获取试卷题目失败");
+        }
+    }
+
     // ====================== 用户数据接口 ======================
     @GetMapping("/gainUserData")
     public Result<Map<String, Object>> gainUserData(@RequestParam int dataId) {
@@ -1421,7 +1536,8 @@ public class QuestionController {
                 for (String clause : setClauses) {
                     Object val = params.get(idx - 1);
                     if (clause.startsWith("mistake_list_id") || clause.startsWith("correct_list_id") || clause.startsWith("collect_list_id")) {
-                        Integer[] arr = parseJsonToIntArray((String) val);
+                        // 前端可能传 JSON 字符串，也可能传 ArrayList
+                        Integer[] arr = objectToIntArray(val);
                         ps.setArray(idx, connection.createArrayOf("integer", arr));
                     } else {
                         ps.setObject(idx, val);
@@ -1531,6 +1647,90 @@ public class QuestionController {
             return mapper.readValue(json, Integer[].class);
         } catch (Exception e) {
             return new Integer[0];
+        }
+    }
+
+    /**
+     * 将 Object 转为 Integer[]，兼容 String（JSON）、ArrayList、Integer[]
+     */
+    private Integer[] objectToIntArray(Object val) {
+        if (val == null) return new Integer[0];
+        if (val instanceof String) {
+            return parseJsonToIntArray((String) val);
+        }
+        if (val instanceof List) {
+            List<?> list = (List<?>) val;
+            return list.stream()
+                    .map(item -> item instanceof Number ? ((Number) item).intValue() : Integer.valueOf(String.valueOf(item)))
+                    .toArray(Integer[]::new);
+        }
+        if (val instanceof Integer[]) {
+            return (Integer[]) val;
+        }
+        if (val instanceof Object[]) {
+            Object[] arr = (Object[]) val;
+            Integer[] result = new Integer[arr.length];
+            for (int i = 0; i < arr.length; i++) {
+                result[i] = arr[i] instanceof Number ? ((Number) arr[i]).intValue() : Integer.valueOf(String.valueOf(arr[i]));
+            }
+            return result;
+        }
+        return new Integer[0];
+    }
+
+    // ====================== 更新用户基本信息接口 ======================
+
+    /**
+     * 更新 users 表中的 username 和 phone
+     */
+    @PostMapping("/upUserData")
+    public Result<String> upUserData(@RequestBody Map<String, Object> body) {
+        Integer userId = getUserIdFromBody(body);
+        if (userId == null) {
+            return Result.error("user_id不能为空");
+        }
+
+        try {
+            // 检查用户是否存在
+            Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM users WHERE user_id = ?", Integer.class, userId);
+            if (count == null || count == 0) {
+                return Result.error("用户不存在");
+            }
+
+            StringBuilder sql = new StringBuilder("UPDATE users SET ");
+            List<Object> params = new ArrayList<>();
+            List<String> setClauses = new ArrayList<>();
+
+            if (body.containsKey("username")) {
+                String username = (String) body.get("username");
+                if (username != null && !username.trim().isEmpty()) {
+                    setClauses.add("username = ?");
+                    params.add(username.trim());
+                }
+            }
+            if (body.containsKey("phone")) {
+                String phone = (String) body.get("phone");
+                if (phone != null && !phone.trim().isEmpty()) {
+                    setClauses.add("phone = ?");
+                    params.add(phone.trim());
+                }
+            }
+
+            if (setClauses.isEmpty()) {
+                return Result.success("无需更新");
+            }
+
+            sql.append(String.join(", ", setClauses));
+            sql.append(" WHERE user_id = ?");
+            params.add(userId);
+
+            jdbcTemplate.update(sql.toString(), params.toArray());
+
+            return Result.success("更新成功");
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error("更新用户信息失败");
         }
     }
 

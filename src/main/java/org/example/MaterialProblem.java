@@ -8,6 +8,8 @@ public class MaterialProblem {
     private QuestionContent question_content;
     private String correct_answer;
     private String answer_analysis;
+    private Boolean has_image;
+    private String image_url;
 
     public Integer getId() {
         return id;
@@ -63,5 +65,21 @@ public class MaterialProblem {
 
     public void setAnswer_analysis(String answer_analysis) {
         this.answer_analysis = answer_analysis;
+    }
+
+    public Boolean getHas_image() {
+        return has_image;
+    }
+
+    public void setHas_image(Boolean has_image) {
+        this.has_image = has_image;
+    }
+
+    public String getImage_url() {
+        return image_url;
+    }
+
+    public void setImage_url(String image_url) {
+        this.image_url = image_url;
     }
 }

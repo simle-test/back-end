@@ -237,9 +237,10 @@ public class QuestionService {
     public List<Question> getAllFromTotal() {
         List<Question> questions = questionMapper.findAllFromTotal();
 
+        // 收集所有有 material_id 的题目（不再依赖 has_material 标志，因为数据库里可能漏设）
         List<Integer> materialIds = new ArrayList<>();
         for (Question q : questions) {
-            if (Boolean.TRUE.equals(q.getHas_material()) && q.getMaterial_id() != null) {
+            if (q.getMaterial_id() != null) {
                 materialIds.add(q.getMaterial_id());
             }
         }
@@ -254,7 +255,12 @@ public class QuestionService {
 
         for (Question q : questions) {
             if (q.getMaterial_id() != null) {
-                q.setMaterialProblems(materialMap.getOrDefault(q.getMaterial_id(), new ArrayList<>()));
+                List<MaterialProblem> problems = materialMap.getOrDefault(q.getMaterial_id(), new ArrayList<>());
+                q.setMaterialProblems(problems);
+                // 如果实际存在子题目，则自动修正 has_material 为 true
+                if (!problems.isEmpty()) {
+                    q.setHas_material(true);
+                }
             }
         }
 
@@ -266,7 +272,7 @@ public class QuestionService {
 
         List<Integer> materialIds = new ArrayList<>();
         for (Question q : questions) {
-            if (Boolean.TRUE.equals(q.getHas_material()) && q.getMaterial_id() != null) {
+            if (q.getMaterial_id() != null) {
                 materialIds.add(q.getMaterial_id());
             }
         }
@@ -281,7 +287,11 @@ public class QuestionService {
 
         for (Question q : questions) {
             if (q.getMaterial_id() != null) {
-                q.setMaterialProblems(materialMap.getOrDefault(q.getMaterial_id(), new ArrayList<>()));
+                List<MaterialProblem> problems = materialMap.getOrDefault(q.getMaterial_id(), new ArrayList<>());
+                q.setMaterialProblems(problems);
+                if (!problems.isEmpty()) {
+                    q.setHas_material(true);
+                }
             }
         }
 
