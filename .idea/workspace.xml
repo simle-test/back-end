@@ -6,13 +6,39 @@
   <component name="ChangeListManager">
     <list default="true" id="23ad7463-39b9-4530-898f-59ac66e8ee4f" name="更改" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/dataSources.local.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/dataSources.local.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/dataSources/3916e766-e149-47d6-a91f-207842c40bee.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/dataSources/3916e766-e149-47d6-a91f-207842c40bee.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/dataSources/3916e766-e149-47d6-a91f-207842c40bee.xml" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/org/example/Main.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/org/example/Main.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/org/example/QuestionService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/org/example/QuestionService.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/org/example/controller/QuestionController.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/org/example/controller/QuestionController.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/org/example/mapper/QuestionMapper.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/org/example/mapper/QuestionMapper.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/mapper/QuestionMapper.xml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/mapper/QuestionMapper.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/back_end.jar" beforeDir="false" afterPath="$PROJECT_DIR$/target/back_end.jar" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/back_end.jar.original" beforeDir="false" afterPath="$PROJECT_DIR$/target/back_end.jar.original" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/application.properties" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/application.properties" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/mapper/MaterialProblemMapper.xml" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/mapper/MaterialProblemMapper.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/mapper/QuestionMapper.xml" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/mapper/QuestionMapper.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/Main.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/Main.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/MaterialProblem.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/MaterialProblem.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/Question.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/Question.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/QuestionContent.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/QuestionContent.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/QuestionService.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/QuestionService.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/common/Result.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/common/Result.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/config/AcceptHeaderFilter$1.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/config/AcceptHeaderFilter$1.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/config/AcceptHeaderFilter.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/config/AcceptHeaderFilter.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/config/CorsConfig.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/config/CorsConfig.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/config/RestTemplateConfig.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/config/RestTemplateConfig.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/config/WebConfig.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/config/WebConfig.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/controller/AiKeyController.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/controller/AiKeyController.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/controller/FileController.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/controller/FileController.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/controller/MaterialController.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/controller/MaterialController.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/controller/QuestionController$WechatSession.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/controller/QuestionController$WechatSession.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/controller/QuestionController.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/controller/QuestionController.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/controller/UploadController.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/controller/UploadController.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/dao/UserDAO.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/dao/UserDAO.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/entity/User.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/entity/User.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/entity/UserData.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/entity/UserData.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/entity/WechatSession.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/entity/WechatSession.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/handler/JsonTypeHandler.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/handler/JsonTypeHandler.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/mapper/MaterialProblemMapper.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/mapper/MaterialProblemMapper.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/mapper/QuestionMapper.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/mapper/QuestionMapper.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/org/example/scheduler/DailyResetScheduler.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/org/example/scheduler/DailyResetScheduler.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/maven-status/maven-compiler-plugin/compile/default-compile/createdFiles.lst" beforeDir="false" afterPath="$PROJECT_DIR$/target/maven-status/maven-compiler-plugin/compile/default-compile/createdFiles.lst" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -29,6 +55,10 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
+  <component name="KubernetesApiPersistence">{}</component>
+  <component name="KubernetesApiProvider">{
+  &quot;isMigrated&quot;: true
+}</component>
   <component name="ProjectColorInfo">{
   &quot;customColor&quot;: &quot;&quot;,
   &quot;associatedIndex&quot;: 6
@@ -40,6 +70,7 @@
   </component>
   <component name="PropertiesComponent">{
   &quot;keyToString&quot;: {
+    &quot;Maven.untitled [clean].executor&quot;: &quot;Run&quot;,
     &quot;Maven.untitled [package].executor&quot;: &quot;Run&quot;,
     &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
     &quot;RequestMappingsPanelOrder0&quot;: &quot;0&quot;,
@@ -74,7 +105,8 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-jdk-30f59d01ecdd-2fc7cc6b9a17-intellij.indexing.shared.core-IU-253.31033.145" />
+        <option value="bundled-jdk-9823dce3aa75-bf35d07a577b-intellij.indexing.shared.core-IU-252.28238.7" />
+        <option value="bundled-js-predefined-d6986cc7102b-a71380e98a7c-JavaScript-IU-252.28238.7" />
       </set>
     </attachedChunks>
   </component>
@@ -90,10 +122,26 @@
       <workItem from="1779861500924" duration="6985000" />
       <workItem from="1779955292392" duration="735000" />
       <workItem from="1780012644895" duration="8645000" />
+      <workItem from="1781232294017" duration="2217000" />
+      <workItem from="1781436144242" duration="1238000" />
+      <workItem from="1781504551445" duration="4930000" />
+      <workItem from="1781683233166" duration="1817000" />
+      <workItem from="1782131201782" duration="642000" />
+      <workItem from="1782280929725" duration="5298000" />
     </task>
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <breakpoint enabled="true" type="java-exception">
+          <properties class="java.lang.ClassCastException" package="java.lang" />
+          <option name="timeStamp" value="1" />
+        </breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
   </component>
 </project>

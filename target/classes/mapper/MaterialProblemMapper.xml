@@ -9,6 +9,8 @@
         <result property="status" column="status"/>
         <result property="correct_answer" column="correct_answer"/>
         <result property="answer_analysis" column="answer_analysis"/>
+        <result property="has_image" column="has_image"/>
+        <result property="image_url" column="image_url"/>
         <result property="question_content" column="question_content"
                 typeHandler="org.example.handler.JsonTypeHandler"
                 javaType="org.example.QuestionContent"/>
